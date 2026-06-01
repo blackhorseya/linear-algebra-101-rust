@@ -33,42 +33,32 @@ impl std::error::Error for LinAlgError {}
 
 /// 一個以 row-major `Vec<Vec<f64>>` 儲存的二維矩陣。
 ///
-/// 欄位皆為 private,只能透過方法存取 —— 對應 Go 版用 private fields 封裝
-/// 內部狀態的設計,確保矩陣永遠維持「rows / cols 與 data 形狀一致」的有效狀態。
+/// 維度不另存欄位,而是從 `data` 導出(見 [`rows`](Matrix::rows) /
+/// [`cols`](Matrix::cols))—— `data` 是唯一真相來源,沒有「rows/cols 與 data
+/// 對不上」的不變式要維護。欄位 private,只能透過方法存取。
 #[derive(Debug, Clone)]
 pub struct Matrix {
-    rows: usize,
-    cols: usize,
     data: Vec<Vec<f64>>,
 }
 
 impl Matrix {
     /// 建立一個 `rows × cols` 的矩陣,所有元素初始化為 0。
     pub fn new(rows: usize, cols: usize) -> Matrix {
-        let data = vec![vec![0.0; cols]; rows];
-        Matrix { rows, cols, data }
+        Matrix {
+            data: vec![vec![0.0; cols]; rows],
+        }
     }
 
     /// 精確比較兩矩陣是否相等:維度相同,且每個對應元素完全一致。
     pub fn equals(&self, other: &Matrix) -> bool {
-        if self.rows != other.rows || self.cols != other.cols {
-            return false;
-        }
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                if self.data[i][j] != other.data[i][j] {
-                    return false;
-                }
-            }
-        }
-        true
+        self.rows() == other.rows() && self.cols() == other.cols() && self.data == other.data
     }
 
     /// 在容差 `epsilon` 內近似比較兩矩陣 —— 浮點運算後比較結果時用這個,而非
     /// 精確的 [`equals`](Matrix::equals)。`epsilon` 由呼叫端明確指定:容差該多大
     /// 取決於前面運算的數量級,不該寫死;傳 `0.0` 即退化為精確比較。
     pub fn approx_equals(&self, other: &Matrix, epsilon: f64) -> bool {
-        if self.rows != other.rows || self.cols != other.cols {
+        if self.rows() != other.rows() || self.cols() != other.cols() {
             return false;
         }
         for (row_a, row_b) in self.data.iter().zip(&other.data) {
@@ -83,19 +73,12 @@ impl Matrix {
 
     /// 是否為方陣(rows == cols)。
     pub fn is_square(&self) -> bool {
-        self.rows == self.cols
+        self.rows() == self.cols()
     }
 
     /// 是否為零矩陣(所有元素皆為 0)。
     pub fn is_zero(&self) -> bool {
-        for row in &self.data {
-            for &value in row {
-                if value != 0.0 {
-                    return false;
-                }
-            }
-        }
-        true
+        self.data.iter().flatten().all(|&v| v == 0.0)
     }
 
     /// 逐元素相加,回傳新矩陣。
@@ -103,37 +86,42 @@ impl Matrix {
     /// 維度不合時回傳 `Err(LinAlgError::DimensionMismatch)` —— 把「這個運算可能
     /// 失敗」提升到型別層級,呼叫端被 `Result` 逼著面對維度條件。
     pub fn add(&self, other: &Matrix) -> Result<Matrix, LinAlgError> {
-        if self.rows != other.rows || self.cols != other.cols {
+        if self.rows() != other.rows() || self.cols() != other.cols() {
             return Err(LinAlgError::DimensionMismatch);
         }
-        let mut result = Matrix::new(self.rows, self.cols);
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                result.data[i][j] = self.data[i][j] + other.data[i][j];
-            }
-        }
-        Ok(result)
+        let data = self
+            .data
+            .iter()
+            .zip(&other.data)
+            .map(|(row_a, row_b)| {
+                row_a
+                    .iter()
+                    .zip(row_b)
+                    .map(|(&a, &b)| a + b)
+                    .collect::<Vec<f64>>()
+            })
+            .collect::<Vec<Vec<f64>>>();
+        Ok(Matrix { data })
     }
 
     /// 純量乘法:每個元素乘上 `scalar`,回傳新矩陣。
     pub fn scalar_multiply(&self, scalar: f64) -> Matrix {
-        let mut result = Matrix::new(self.rows, self.cols);
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                result.data[i][j] = self.data[i][j] * scalar;
-            }
-        }
-        result
+        let data = self
+            .data
+            .iter()
+            .map(|row| row.iter().map(|&v| v * scalar).collect::<Vec<f64>>())
+            .collect::<Vec<Vec<f64>>>();
+        Matrix { data }
     }
 
-    /// 矩陣的列數(rows)。
+    /// 矩陣的列數(rows)—— 從 `data` 的外層長度導出。
     pub fn rows(&self) -> usize {
-        self.rows
+        self.data.len()
     }
 
-    /// 矩陣的行數(cols)。
+    /// 矩陣的行數(cols)—— 取第一列的長度;空矩陣(0 列)為 0。
     pub fn cols(&self) -> usize {
-        self.cols
+        self.data.first().map_or(0, |row| row.len())
     }
 }
 
@@ -141,20 +129,18 @@ impl Matrix {
 mod tests {
     use super::*;
 
-    /// White-box 測試輔助:直接設定 private 欄位,從 row-major 字面值建出 `Matrix`。
-    /// 因為測試與實作同在一個 module,才能存取私有欄位 —— 對應 Go 的 `matrixFrom`。
+    /// White-box 測試輔助:直接從 row-major 字面值建出 `Matrix`。導出版表示法下
+    /// 維度由 `data` 決定,包起來就好 —— 對應 Go 的 `matrixFrom`。
     fn matrix_from(data: Vec<Vec<f64>>) -> Matrix {
-        let rows = data.len();
-        let cols = if rows > 0 { data[0].len() } else { 0 };
-        Matrix { rows, cols, data }
+        Matrix { data }
     }
 
     #[test]
     fn new_matrix_is_zero_initialized() {
         for (rows, cols) in [(2usize, 2usize), (3, 1), (1, 4)] {
             let m = Matrix::new(rows, cols);
-            assert_eq!(m.rows, rows, "rows 不符");
-            assert_eq!(m.cols, cols, "cols 不符");
+            assert_eq!(m.rows(), rows, "rows 不符");
+            assert_eq!(m.cols(), cols, "cols 不符");
             assert_eq!(m.data.len(), rows, "外層長度應為 rows");
             for row in &m.data {
                 assert_eq!(row.len(), cols, "每列長度應為 cols");
@@ -197,6 +183,10 @@ mod tests {
         let m = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
         assert_eq!(m.rows(), 2);
         assert_eq!(m.cols(), 3);
+        // 導出版的取捨:0 列的空矩陣,cols 也只能是 0
+        let empty = matrix_from(vec![]);
+        assert_eq!(empty.rows(), 0);
+        assert_eq!(empty.cols(), 0);
     }
 
     #[test]
