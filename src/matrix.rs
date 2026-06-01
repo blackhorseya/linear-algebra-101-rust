@@ -227,3 +227,116 @@ mod tests {
         );
     }
 }
+
+/// Theorem 1.1 —— 矩陣加法與純量乘法的代數律,用 property test 驗證。
+///
+/// 定理是「for all」敘述,程式無法*證明*(那要 proof assistant),只能*驗證*:
+/// proptest 自動產生大量隨機輸入,一個反例就推翻,且會把反例 **shrink** 成最小案例。
+///
+/// 兩種策略對應兩種比較:
+/// - `int_matrix` 產生小整數值。整數在 f64 下加減乘**完全精確**,可用精確 `equals`。
+/// - `real_matrix` 產生真實浮點值。實數運算有捨入誤差,定律只在容差內成立,須用
+///   `approx_equals(_, 1e-9)` —— 這正是「為什麼加法律用整數、純量律用實數」的取捨。
+#[cfg(test)]
+mod theorem_1_1_laws {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// 產生 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下精確)。
+    fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
+            Matrix {
+                data: grid
+                    .into_iter()
+                    .map(|row| row.into_iter().map(|v| v as f64).collect())
+                    .collect(),
+            }
+        })
+    }
+
+    /// 產生 `rows×cols`、元素為 [-100, 100] 真實浮點的矩陣。
+    fn real_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-100.0f64..100.0, cols), rows)
+            .prop_map(|data| Matrix { data })
+    }
+
+    proptest! {
+        // (a) A + B = B + A — 交換律(整數,精確)。【範本】
+        #[test]
+        fn add_commutative(a in int_matrix(3, 3), b in int_matrix(3, 3)) {
+            let ab = a.add(&b).unwrap();
+            let ba = b.add(&a).unwrap();
+            prop_assert!(ab.equals(&ba), "A+B != B+A\n A={a:?}\n B={b:?}");
+        }
+
+        // (e) (st)A = s(tA) — 純量結合律(真實浮點,approx)。【範本:浮點測試】
+        #[test]
+        fn scalar_associative(a in real_matrix(3, 3), s in -10.0f64..10.0, t in -10.0f64..10.0) {
+            let left = a.scalar_multiply(s * t);
+            let right = a.scalar_multiply(t).scalar_multiply(s);
+            prop_assert!(left.approx_equals(&right, 1e-9), "(st)A != s(tA)");
+        }
+
+        // ===== 以下為 homework:把 todo!() 換成真正的驗證,讓測試轉綠 =====
+
+        // (b) (A+B)+C = A+(B+C) — 加法結合律(整數,精確 equals)。
+        #[test]
+        fn add_associative(
+            a in int_matrix(3, 3),
+            b in int_matrix(3, 3),
+            c in int_matrix(3, 3),
+        ) {
+            let ab = a.add(&b).unwrap();
+            let left = ab.add(&c).unwrap();
+            let bc = b.add(&c).unwrap();
+            let right = a.add(&bc).unwrap();
+            prop_assert!(left.equals(&right), "(A+B)+C != A+(B+C)\n A={a:?}\n B={b:?}\n C={c:?}");
+        }
+
+        // (c) A + O = A — 加法單位元(O = 零矩陣 Matrix::new(rows, cols))。
+        #[test]
+        fn add_identity(a in int_matrix(3, 3)) {
+            let o = Matrix::new(a.rows(), a.cols()); // O 的維度要跟 A 一樣
+            let sum = a.add(&o).unwrap();
+            prop_assert!(sum.equals(&a), "A + O != A\n A={a:?}");
+        }
+
+        // (d) A + (−A) = O — 加法反元素(−A = a.scalar_multiply(-1.0))。
+        #[test]
+        fn add_inverse(a in int_matrix(3, 3)) {
+            let neg = a.scalar_multiply(-1.0);
+            let sum = a.add(&neg).unwrap();
+            let o = Matrix::new(a.rows(), a.cols()); // 零矩陣的維度要跟 A 一樣
+            prop_assert!(sum.equals(&o), "A + (-A) != O\n A={a:?}");
+        }
+
+        // (f) s(A+B) = sA + sB — 純量對矩陣加法分配(真實浮點,approx_equals)。
+        #[test]
+        fn scalar_distributes_over_add(
+            a in real_matrix(3, 3),
+            b in real_matrix(3, 3),
+            s in -10.0f64..10.0,
+        ) {
+            let ab = a.add(&b).unwrap();
+            let left = ab.scalar_multiply(s);
+            let sa = a.scalar_multiply(s);
+            let sb = b.scalar_multiply(s);
+            let right = sa.add(&sb).unwrap();
+            prop_assert!(left.approx_equals(&right, 1e-9), "s(A+B) != sA + sB\n A={a:?}\n B={b:?}\n s={s:?}");
+        }
+
+        // (g) (s+t)A = sA + tA — 純量加法分配(真實浮點,approx_equals)。
+        #[test]
+        fn scalar_sum_distributes(
+            a in real_matrix(3, 3),
+            s in -10.0f64..10.0,
+            t in -10.0f64..10.0,
+        ) {
+            let left = a.scalar_multiply(s + t);
+            let sa = a.scalar_multiply(s);
+            let ta = a.scalar_multiply(t);
+            let right = sa.add(&ta).unwrap();
+            prop_assert!(left.approx_equals(&right, 1e-9), "(s+t)A != sA + tA\n A={a:?}\n s={s:?}\n t={t:?}");
+        }
+    }
+}
