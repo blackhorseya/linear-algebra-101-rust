@@ -75,6 +75,35 @@ impl Vector {
     pub fn cols(&self) -> usize {
         1
     }
+
+    /// 線性組合:計算 `Σ scalarsᵢ · vectorsᵢ`(第 i 個向量依第 i 個純量縮放後相加)。
+    ///
+    /// 這是 span、線性獨立、矩陣乘法的基石 —— 把向量集合當「基底候選」,純量就是
+    /// 各基底向量的「座標」。設計成**關聯函式**(無 `self`):它作用在一組向量上、
+    /// 產出新的 `Vector`,像具名建構子,因此掛在 `Vector` 之下而非散成 free function。
+    ///
+    /// 錯誤(三種語意不同的失敗,呼叫端可 `match` 區分):
+    /// - `scalars` 與 `vectors` 數量不符 → [`LinAlgError::CountMismatch`]
+    /// - `vectors` 為空(無從決定結果維度)→ [`LinAlgError::EmptyInput`]
+    /// - 各向量維度不一致 → [`LinAlgError::DimensionMismatch`](由 `add` 把關)
+    pub fn linear_combination(scalars: &[f64], vectors: &[Vector]) -> Result<Vector, LinAlgError> {
+        if scalars.len() != vectors.len() {
+            return Err(LinAlgError::CountMismatch);
+        }
+        if vectors.is_empty() {
+            return Err(LinAlgError::EmptyInput);
+        }
+        let dim = vectors[0].rows();
+        let mut result = Vector::new(dim);
+        for (scalar, vector) in scalars.iter().zip(vectors.iter()) {
+            if vector.rows() != dim {
+                return Err(LinAlgError::DimensionMismatch);
+            }
+            let scaled = vector.scale(*scalar);
+            result = result.add(&scaled)?;
+        }
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -146,5 +175,70 @@ mod tests {
         assert_eq!(v.scale(2.0).data, vec![2.0, 4.0, 6.0]);
         assert_eq!(v.scale(0.0).data, vec![0.0, 0.0, 0.0]);
         assert_eq!(v.scale(-1.0).data, vec![-1.0, -2.0, -3.0]);
+    }
+
+    #[test]
+    fn linear_combination_weights_and_sums() {
+        // 2·[1,0] + 3·[0,1] = [2,3] —— 純量即標準基底下的座標
+        let basis = [vector_from(vec![1.0, 0.0]), vector_from(vec![0.0, 1.0])];
+        assert_eq!(
+            Vector::linear_combination(&[2.0, 3.0], &basis)
+                .unwrap()
+                .data,
+            vec![2.0, 3.0]
+        );
+
+        // 2·[1,2,3] + (-1)·[4,5,6] = [-2,-1,0]
+        let vs = [
+            vector_from(vec![1.0, 2.0, 3.0]),
+            vector_from(vec![4.0, 5.0, 6.0]),
+        ];
+        assert_eq!(
+            Vector::linear_combination(&[2.0, -1.0], &vs).unwrap().data,
+            vec![-2.0, -1.0, 0.0]
+        );
+
+        // 單一向量退化為 scale:5·[1,2] = [5,10]
+        let one = [vector_from(vec![1.0, 2.0])];
+        assert_eq!(
+            Vector::linear_combination(&[5.0], &one).unwrap().data,
+            vec![5.0, 10.0]
+        );
+
+        // 全零純量 → 零向量
+        let vs2 = [vector_from(vec![1.0, 2.0]), vector_from(vec![3.0, 4.0])];
+        assert_eq!(
+            Vector::linear_combination(&[0.0, 0.0], &vs2).unwrap().data,
+            vec![0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn linear_combination_rejects_count_mismatch() {
+        let basis = [vector_from(vec![1.0, 0.0]), vector_from(vec![0.0, 1.0])];
+        // 3 個純量、2 個向量
+        assert_eq!(
+            Vector::linear_combination(&[1.0, 2.0, 3.0], &basis).unwrap_err(),
+            LinAlgError::CountMismatch
+        );
+    }
+
+    #[test]
+    fn linear_combination_rejects_dimension_mismatch() {
+        // 向量長度不一致(2 vs 1)
+        let vs = [vector_from(vec![1.0, 2.0]), vector_from(vec![3.0])];
+        assert_eq!(
+            Vector::linear_combination(&[1.0, 1.0], &vs).unwrap_err(),
+            LinAlgError::DimensionMismatch
+        );
+    }
+
+    #[test]
+    fn linear_combination_rejects_empty() {
+        // 空輸入:數量相符(0 == 0)但無從決定結果維度
+        assert_eq!(
+            Vector::linear_combination(&[], &[]).unwrap_err(),
+            LinAlgError::EmptyInput
+        );
     }
 }

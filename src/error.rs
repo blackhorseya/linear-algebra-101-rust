@@ -16,6 +16,11 @@ pub enum LinAlgError {
     /// 兩個運算元(矩陣或向量)維度不一致,無法進行該運算。
     /// 對應 Go 版的 `ErrDimensionMismatch`。
     DimensionMismatch,
+    /// 兩組輸入的數量不符(例:線性組合的純量數 ≠ 向量數)。
+    CountMismatch,
+    /// 運算需要至少一個輸入,卻收到空集合(例:對空向量集合做線性組合,
+    /// 無從決定結果維度)。
+    EmptyInput,
 }
 
 impl fmt::Display for LinAlgError {
@@ -26,6 +31,15 @@ impl fmt::Display for LinAlgError {
                     f,
                     "dimension mismatch: operands must have compatible dimensions"
                 )
+            }
+            LinAlgError::CountMismatch => {
+                write!(
+                    f,
+                    "count mismatch: number of scalars must equal number of vectors"
+                )
+            }
+            LinAlgError::EmptyInput => {
+                write!(f, "empty input: operation requires at least one vector")
             }
         }
     }
@@ -46,6 +60,22 @@ mod tests {
         assert_eq!(
             LinAlgError::DimensionMismatch.to_string(),
             "dimension mismatch: operands must have compatible dimensions"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_count_mismatch() {
+        assert_eq!(
+            LinAlgError::CountMismatch.to_string(),
+            "count mismatch: number of scalars must equal number of vectors"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_empty_input() {
+        assert_eq!(
+            LinAlgError::EmptyInput.to_string(),
+            "empty input: operation requires at least one vector"
         );
     }
 
