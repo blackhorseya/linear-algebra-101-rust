@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! linear-algebra-101 —— 用 Rust 從零實作線性代數,邊寫邊學。
+//!
+//! 依照原始 Go 專案的 git log 順序逐步移植,每一步對應一個 commit。
+//! 目前進度:Matrix 基礎運算(equality / add / scalar multiply)。
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod matrix;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use matrix::{LinAlgError, Matrix};
