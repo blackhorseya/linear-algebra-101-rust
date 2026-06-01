@@ -114,6 +114,20 @@ impl Matrix {
         Matrix { data }
     }
 
+    /// 轉置:沿主對角線翻轉 —— `self` 的 `(i, j)` 變成結果的 `(j, i)`,
+    /// `m×n` 矩陣因此變成 `n×m`。
+    pub fn transpose(&self) -> Matrix {
+        // 結果的第 j 列 = self 的第 j 行(由各列第 j 個元素組成)。
+        let data = (0..self.cols())
+            .map(|j| {
+                (0..self.rows())
+                    .map(|i| self.data[i][j])
+                    .collect::<Vec<f64>>()
+            })
+            .collect::<Vec<Vec<f64>>>();
+        Matrix { data }
+    }
+
     /// 矩陣的列數(rows)—— 從 `data` 的外層長度導出。
     pub fn rows(&self) -> usize {
         self.data.len()
@@ -226,9 +240,29 @@ mod tests {
             vec![vec![-1.0, 2.0], vec![-3.0, -4.0]]
         );
     }
+
+    #[test]
+    fn transpose_swaps_rows_and_cols() {
+        // 寬變高:2×3 → 3×2
+        let wide = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        let t = wide.transpose();
+        assert_eq!(t.data, vec![vec![1.0, 4.0], vec![2.0, 5.0], vec![3.0, 6.0]]);
+        assert_eq!((t.rows(), t.cols()), (3, 2));
+
+        // 方陣:沿對角線反射
+        let square = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert_eq!(
+            square.transpose().data,
+            vec![vec![1.0, 3.0], vec![2.0, 4.0]]
+        );
+
+        // 列向量變行向量:1×3 → 3×1
+        let row = matrix_from(vec![vec![1.0, 2.0, 3.0]]);
+        assert_eq!(row.transpose().data, vec![vec![1.0], vec![2.0], vec![3.0]]);
+    }
 }
 
-/// Theorem 1.1 —— 矩陣加法與純量乘法的代數律,用 property test 驗證。
+/// 教材定理的 property test —— 用 proptest 驗證 Matrix 該滿足的代數律。
 ///
 /// 定理是「for all」敘述,程式無法*證明*(那要 proof assistant),只能*驗證*:
 /// proptest 自動產生大量隨機輸入,一個反例就推翻,且會把反例 **shrink** 成最小案例。
@@ -238,7 +272,7 @@ mod tests {
 /// - `real_matrix` 產生真實浮點值。實數運算有捨入誤差,定律只在容差內成立,須用
 ///   `approx_equals(_, 1e-9)` —— 這正是「為什麼加法律用整數、純量律用實數」的取捨。
 #[cfg(test)]
-mod theorem_1_1_laws {
+mod laws {
     use super::*;
     use proptest::prelude::*;
 
@@ -276,8 +310,6 @@ mod theorem_1_1_laws {
             let right = a.scalar_multiply(t).scalar_multiply(s);
             prop_assert!(left.approx_equals(&right, 1e-9), "(st)A != s(tA)");
         }
-
-        // ===== 以下為 homework:把 todo!() 換成真正的驗證,讓測試轉綠 =====
 
         // (b) (A+B)+C = A+(B+C) — 加法結合律(整數,精確 equals)。
         #[test]
@@ -337,6 +369,33 @@ mod theorem_1_1_laws {
             let ta = a.scalar_multiply(t);
             let right = sa.add(&ta).unwrap();
             prop_assert!(left.approx_equals(&right, 1e-9), "(s+t)A != sA + tA\n A={a:?}\n s={s:?}\n t={t:?}");
+        }
+
+        // ===== Theorem 1.2 —— 轉置(transpose)的性質 =====
+        // 刻意用非方陣 2×3:每條律對方陣也成立,但只有非方陣形狀會真正考驗
+        // 維度交換 m×n → n×m,抓出把 i/j 寫反的 transpose。
+
+        // (a) (A+B)^T = A^T + B^T — 轉置對加法分配(整數,精確)。【範本】
+        #[test]
+        fn transpose_of_sum(a in int_matrix(2, 3), b in int_matrix(2, 3)) {
+            let left = a.add(&b).unwrap().transpose(); // (A+B)^T
+            let right = a.transpose().add(&b.transpose()).unwrap(); // A^T + B^T
+            prop_assert!(left.equals(&right), "(A+B)^T != A^T + B^T\n A={a:?}\n B={b:?}");
+        }
+
+        // (b) (sA)^T = s(A^T) — 縮放與轉置可交換(真實浮點,approx_equals)。
+        #[test]
+        fn transpose_of_scalar_multiple(a in real_matrix(2, 3), s in -10.0f64..10.0) {
+            let left = a.scalar_multiply(s).transpose();
+            let right = a.transpose().scalar_multiply(s);
+            prop_assert!(left.approx_equals(&right, 1e-9), "(sA)^T != s(A^T)\n A={a:?}\n s={s:?}");
+        }
+
+        // (c) (A^T)^T = A — 轉置兩次回到自己(involution)(整數,精確)。
+        #[test]
+        fn transpose_involution(a in int_matrix(2, 3)) {
+            let transposed_twice = a.transpose().transpose();
+            prop_assert!(transposed_twice.equals(&a), "(A^T)^T != A\n A={a:?}");
         }
     }
 }
