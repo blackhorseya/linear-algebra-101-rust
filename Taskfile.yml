@@ -1,0 +1,60 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  test:
+    desc: Run all unit tests
+    cmds:
+      - cargo test
+
+  test:v:
+    desc: Run tests and show captured stdout (Go 的 `go test -v` 對應)
+    cmds:
+      - cargo test -- --nocapture
+
+  cover:
+    desc: Run tests with coverage; page the table with less (橫向捲動不換行)
+    cmds:
+      - cargo llvm-cov | less -FSR
+
+  cover:lines:
+    desc: Print which source lines are not covered
+    cmds:
+      - cargo llvm-cov --show-missing-lines
+
+  cover:html:
+    desc: Open an HTML coverage report in the browser
+    cmds:
+      - cargo llvm-cov --html --open
+
+  fmt:
+    desc: Format all source files (rustfmt)
+    cmds:
+      - cargo fmt
+
+  fmt:check:
+    desc: Verify formatting without rewriting (CI gate)
+    cmds:
+      - cargo fmt --check
+
+  lint:
+    desc: Run Clippy static analysis (Go 的 `go vet` 對應), warnings 視為錯誤
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  build:
+    desc: Compile the crate
+    cmds:
+      - cargo build
+
+  check:
+    desc: Run fmt:check, lint and tests as a pre-commit gate
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: test
