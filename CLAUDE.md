@@ -47,7 +47,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 設計慣例(跨檔案的「big picture」)
 
 - **錯誤是值,不是 panic**:可能失敗的運算(如維度不合)回傳 `Result<_, LinAlgError>`,用型別把失敗可能性逼到呼叫端面前。不要在運算裡 panic。
-- **單一手刷錯誤 enum**:`LinAlgError`(在 `matrix.rs`)不依賴 `thiserror` / `anyhow`,自行 impl `Display` + `std::error::Error`。新錯誤種類加 variant 到這個 enum,讓呼叫端能用 `match` 精確區分。
+- **單一手刷錯誤 enum**:`LinAlgError`(在 `error.rs`,作為跨概念共用的橫切型別)不依賴 `thiserror` / `anyhow`,自行 impl `Display` + `std::error::Error`。新錯誤種類加 variant 到這個 enum,讓呼叫端能用 `match` 精確區分。
 - **維度從資料導出,不另存**:`Matrix` 內部是 private `data: Vec<Vec<f64>>`(row-major),`rows()` / `cols()` 從 `data` 算出來 —— `data` 是唯一真相來源,沒有「維度欄位與資料對不上」的不變式要維護。欄位一律 private,只透過方法存取。
 - **浮點比較用 `approx_equals(other, epsilon)`**,不要在浮點運算後用精確的 `equals`;容差 `epsilon` 由呼叫端視運算數量級指定。
 

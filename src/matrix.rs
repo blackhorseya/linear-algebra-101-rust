@@ -3,33 +3,7 @@
 //! 對應原始 Go 專案的第一個 feat commit:
 //! `feat: implement Matrix with equality, addition and scalar multiply`。
 
-use std::fmt;
-
-/// 線性代數運算的錯誤型別。
-///
-/// 手刷 enum、不依賴外部 crate,呼叫端可用 `match` 精確區分錯誤種類 ——
-/// 這是 Rust 相對於 Go「sentinel error + 字串」的型別安全版本。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LinAlgError {
-    /// 兩個矩陣維度不一致,無法進行該運算。
-    /// 對應 Go 版的 `ErrDimensionMismatch`。
-    DimensionMismatch,
-}
-
-impl fmt::Display for LinAlgError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LinAlgError::DimensionMismatch => {
-                write!(
-                    f,
-                    "dimension mismatch: matrices must have the same dimensions"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for LinAlgError {}
+use crate::error::LinAlgError;
 
 /// 一個以 row-major `Vec<Vec<f64>>` 儲存的二維矩陣。
 ///
