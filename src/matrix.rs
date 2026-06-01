@@ -64,6 +64,23 @@ impl Matrix {
         true
     }
 
+    /// 在容差 `epsilon` 內近似比較兩矩陣 —— 浮點運算後比較結果時用這個,而非
+    /// 精確的 [`equals`](Matrix::equals)。`epsilon` 由呼叫端明確指定:容差該多大
+    /// 取決於前面運算的數量級,不該寫死;傳 `0.0` 即退化為精確比較。
+    pub fn approx_equals(&self, other: &Matrix, epsilon: f64) -> bool {
+        if self.rows != other.rows || self.cols != other.cols {
+            return false;
+        }
+        for (row_a, row_b) in self.data.iter().zip(&other.data) {
+            for (&a, &b) in row_a.iter().zip(row_b) {
+                if (a - b).abs() > epsilon {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// 是否為方陣(rows == cols)。
     pub fn is_square(&self) -> bool {
         self.rows == self.cols
@@ -108,6 +125,16 @@ impl Matrix {
         }
         result
     }
+
+    /// 矩陣的列數(rows)。
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    /// 矩陣的行數(cols)。
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
 }
 
 #[cfg(test)]
@@ -148,10 +175,28 @@ mod tests {
     }
 
     #[test]
+    fn approx_equals_respects_tolerance() {
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let b = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.000001]]);
+        // 差 1e-6:在 1e-3 容差內算相等,但精確比較(epsilon=0)不相等
+        assert!(a.approx_equals(&b, 1e-3));
+        assert!(!a.approx_equals(&b, 0.0));
+        // 維度不同永遠不相等
+        assert!(!a.approx_equals(&matrix_from(vec![vec![1.0, 2.0, 3.0]]), 1e-3));
+    }
+
+    #[test]
     fn is_square_detects_square_matrices() {
         assert!(matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).is_square());
         assert!(!matrix_from(vec![vec![1.0], vec![2.0], vec![3.0]]).is_square()); // tall
         assert!(!matrix_from(vec![vec![1.0, 2.0, 3.0]]).is_square()); // wide
+    }
+
+    #[test]
+    fn rows_and_cols_report_dimensions() {
+        let m = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(m.rows(), 2);
+        assert_eq!(m.cols(), 3);
     }
 
     #[test]
