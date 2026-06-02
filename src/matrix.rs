@@ -698,7 +698,11 @@ mod laws {
             prop_assert!(got.is_zero(), "O·v 應為零向量\n v={v:?}");
         }
 
-        // A·eⱼ = column(j) —— column 抽取的代數恆等式:用第 j 個標準基底向量乘 A,
+        // ===== Theorem 1.3 —— 矩陣–向量乘積的性質 =====
+        // (d) A·eⱼ = column(j)、(f) A·0 = 0、(g) O·v = 0 已在上面驗過;以下補其餘。
+        // (a)(c)(h) 整數精確,(b) 含實數純量故 approx,(e) 是「矩陣由其作用唯一決定」的關鍵律。
+
+        // (d) A·eⱼ = column(j) —— column 抽取的代數恆等式:用第 j 個標準基底向量乘 A,
         // 恰好選出第 j 個 column。這是 column view 的公式,也是「Ax 是 column 的
         // 線性組合」字面成立的原因。用非方陣 2×3:eⱼ ∈ Rⁿ、column ∈ Rᵐ。整數值精確。
         #[test]
@@ -709,6 +713,89 @@ mod laws {
                 let got = a.multiply_vector(&e).unwrap();
                 prop_assert!(got.equals(&want), "A·e{j} != column({j})\n A={a:?}");
             }
+        }
+
+        // (a) A(u + v) = Au + Av —— 對向量加法分配(乘積在向量引數上是 additive)。整數精確。
+        #[test]
+        fn matrix_vector_distributes_over_vector_add(
+            a in int_matrix(2, 3),
+            u in int_vector(3),
+            v in int_vector(3),
+        ) {
+            let left = a.multiply_vector(&u.add(&v).unwrap()).unwrap(); // A(u+v)
+            let au = a.multiply_vector(&u).unwrap();
+            let av = a.multiply_vector(&v).unwrap();
+            let right = au.add(&av).unwrap(); // Au + Av
+            prop_assert!(left.equals(&right), "A(u+v) != Au+Av\n A={a:?}\n u={u:?}\n v={v:?}");
+        }
+
+        // (b) A(cu) = c(Au) = (cA)u —— 與純量相容(homogeneous)。c 是隨機實數 → approx。
+        #[test]
+        fn matrix_vector_homogeneous_in_scalar(
+            a in int_matrix(2, 3),
+            u in int_vector(3),
+            c in -10.0f64..10.0,
+        ) {
+            let left = a.multiply_vector(&u.scale(c)).unwrap(); // A(cu)
+            let c_au = a.multiply_vector(&u).unwrap().scale(c); // c(Au)
+            let ca_u = a.scalar_multiply(c).multiply_vector(&u).unwrap(); // (cA)u
+            prop_assert!(left.approx_equals(&c_au, 1e-9), "A(cu) != c(Au)\n A={a:?}\n u={u:?}\n c={c}");
+            prop_assert!(left.approx_equals(&ca_u, 1e-9), "A(cu) != (cA)u\n A={a:?}\n u={u:?}\n c={c}");
+        }
+
+        // (c) (A + B)u = Au + Bu —— 對矩陣加法分配(在矩陣引數上是 additive)。整數精確。
+        #[test]
+        fn matrix_vector_distributes_over_matrix_add(
+            a in int_matrix(2, 3),
+            b in int_matrix(2, 3),
+            u in int_vector(3),
+        ) {
+            let left = a.add(&b).unwrap().multiply_vector(&u).unwrap(); // (A+B)u
+            let au = a.multiply_vector(&u).unwrap();
+            let bu = b.multiply_vector(&u).unwrap();
+            let right = au.add(&bu).unwrap(); // Au + Bu
+            prop_assert!(left.equals(&right), "(A+B)u != Au+Bu\n A={a:?}\n B={b:?}\n u={u:?}");
+        }
+
+        // (e) 【關鍵律】矩陣由它在向量上的作用唯一決定:若 Bw = Aw 對所有 w,則 B = A。
+        // 不需要「所有 w」—— 由 (a)+(d),只要探測 n 個標準基底向量 eⱼ 就足夠。
+        // 驗兩個方向:正向用 eⱼ 重建 A;反向(反證)改動一個元素,只有對應那行的
+        // C·eⱼ 會偏離 A·eⱼ。整數精確。
+        #[test]
+        fn matrix_is_determined_by_action_on_standard_vectors(a in int_matrix(2, 3)) {
+            // 正向:用 eⱼ 把每一行探測出來,組回 B,應等於 A。
+            let columns: Vec<Vector> = (0..a.cols())
+                .map(|j| a.multiply_vector(&Vector::standard(a.cols(), j).unwrap()).unwrap())
+                .collect();
+            let reconstructed = Matrix {
+                data: (0..a.rows())
+                    .map(|i| columns.iter().map(|col| col.entries()[i]).collect())
+                    .collect(),
+            };
+            prop_assert!(reconstructed.equals(&a), "用 eⱼ 重建的 B != A\n A={a:?}");
+
+            // 反向(反證):改動 a 的一個元素得到 c,則「c·eⱼ != a·eⱼ」恰好只在
+            // 被改元素所在那一行 j 成立。
+            let mut c = a.clone();
+            let (mod_row, mod_col) = (0usize, 0usize);
+            c.data[mod_row][mod_col] += 10.0;
+            for j in 0..a.cols() {
+                let e = Vector::standard(a.cols(), j).unwrap();
+                let col_a = a.multiply_vector(&e).unwrap();
+                let col_c = c.multiply_vector(&e).unwrap();
+                if j == mod_col {
+                    prop_assert!(!col_a.equals(&col_c), "改動的第 {j} 行應不同\n A={a:?}");
+                } else {
+                    prop_assert!(col_a.equals(&col_c), "未改動的第 {j} 行應相同\n A={a:?}");
+                }
+            }
+        }
+
+        // (h) Iₙv = v —— 單位矩陣是乘法單位元。整數精確。
+        #[test]
+        fn identity_times_vector_is_identity(v in int_vector(4)) {
+            let iv = Matrix::identity(v.rows()).multiply_vector(&v).unwrap();
+            prop_assert!(iv.equals(&v), "Iₙv != v\n v={v:?}");
         }
 
         // ===== Stochastic 矩陣 —— 機率保持 =====
