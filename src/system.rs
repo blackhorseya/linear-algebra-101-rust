@@ -50,6 +50,19 @@ impl System {
             .collect();
         Matrix::from_rows(augmented_rows)
     }
+
+    /// 驗證候選向量是否為本系統的解,即 `A·candidate` 是否等於常數向量 `b`。
+    ///
+    /// 元素是 `f64`,故用容差 `epsilon` 比較而非精確相等:傳 `0.0` 要求精確,
+    /// 傳如 `1e-9` 吸收矩陣-向量乘積累積的捨入誤差。
+    ///
+    /// 候選長度錯誤時回 `Err(LinAlgError::DimensionMismatch)` —— 長度 ≠ 未知數
+    /// 個數(A 的行數)不是「答錯」,而是「問題本身 ill-formed」,無從判定,
+    /// 故回錯誤而非靜默的 `false`(由 `multiply_vector` 把關、用 `?` 上拋)。
+    pub fn is_solution(&self, candidate: &Vector, epsilon: f64) -> Result<bool, LinAlgError> {
+        let ax = self.A.multiply_vector(candidate)?; // 長度不符 → ? 自動上拋 Err
+        Ok(ax.approx_equals(&self.b, epsilon))
+    }
 }
 
 #[cfg(test)]
@@ -130,6 +143,62 @@ mod tests {
             single
                 .to_augmented_matrix()
                 .equals(&Matrix::from_rows(vec![vec![2.0, 3.0, 4.0]]))
+        );
+    }
+
+    #[test]
+    fn is_solution_verifies_candidate_against_ax_eq_b() {
+        // x + y = 3, x - y = 1  ⇒  唯一解 (2, 1)
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, -1.0]]),
+            Vector::from_vec(vec![3.0, 1.0]),
+        )
+        .unwrap();
+
+        // 精確解
+        assert!(
+            sys.is_solution(&Vector::from_vec(vec![2.0, 1.0]), 0.0)
+                .unwrap()
+        );
+        // 錯的候選:A·[1,1] = [2, 0] ≠ [3, 1]
+        assert!(
+            !sys.is_solution(&Vector::from_vec(vec![1.0, 1.0]), 0.0)
+                .unwrap()
+        );
+        // 近似解:[2, 1+1e-12] 在 1e-9 容差內算解;精確檢查(eps=0)則否 —— 這正是
+        // is_solution 收容差的理由
+        let near = Vector::from_vec(vec![2.0, 1.0 + 1e-12]);
+        assert!(sys.is_solution(&near, 1e-9).unwrap());
+        assert!(!sys.is_solution(&near, 0.0).unwrap());
+    }
+
+    #[test]
+    fn is_solution_accepts_consistent_over_determined_system() {
+        // 超定:3 式、2 未知數,(1, 1) 同時滿足 x=1、y=1、x+y=2。
+        // 「驗證」只是一次 O(mn) 乘積;「求解」這種系統卻要消去 / 最小平方。
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![1.0, 1.0, 2.0]),
+        )
+        .unwrap();
+        assert!(
+            sys.is_solution(&Vector::from_vec(vec![1.0, 1.0]), 0.0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn is_solution_rejects_candidate_length_mismatch() {
+        // 2 未知數,但候選長度 3:A·candidate 無法成形 → 問題 ill-formed → Err
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, -1.0]]),
+            Vector::from_vec(vec![3.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(
+            sys.is_solution(&Vector::from_vec(vec![1.0, 2.0, 3.0]), 0.0)
+                .unwrap_err(),
+            LinAlgError::DimensionMismatch
         );
     }
 }
