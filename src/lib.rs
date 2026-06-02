@@ -11,5 +11,5 @@ pub mod vector;
 
 pub use error::LinAlgError;
 pub use matrix::Matrix;
-pub use system::System;
+pub use system::{RowKind, System};
 pub use vector::Vector;

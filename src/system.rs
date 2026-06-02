@@ -4,6 +4,7 @@
 //! (`feat(system): add System type with augmented matrix conversion`)。
 
 use crate::{LinAlgError, Matrix, Vector};
+use std::fmt;
 
 /// 一個線性方程組 `Ax = b`:係數矩陣 `A` 配上常數向量 `b`,`x` 是待解的未知數向量。
 ///
@@ -85,6 +86,64 @@ impl System {
     pub fn is_solution(&self, candidate: &Vector, epsilon: f64) -> Result<bool, LinAlgError> {
         let ax = self.A.multiply_vector(candidate)?; // 長度不符 → ? 自動上拋 Err
         Ok(ax.approx_equals(&self.b, epsilon))
+    }
+
+    /// 依第 `i` 條方程式在增廣矩陣 `[A | b]` 裡那一列的形態,判定它的 [`RowKind`]。
+    ///
+    /// 係數或常數是否算「零」在容差 `epsilon` 內判斷(傳 `0.0` 即精確)。這是
+    /// **preliminary(初步)** 檢查:只照當下的列字面讀,看不到要列化簡後才浮現的
+    /// 矛盾或冗餘 —— 例如 `[1 1 | 2]` 與 `[1 1 | 3]` 各自 [`RowKind::Normal`],合起來
+    /// 卻矛盾(見測試 `has_contradictory_row_misses_hidden_contradiction`)。
+    ///
+    /// `i` 越界(`>= 方程式數`)→ `Err(LinAlgError::IndexOutOfRange)`,由 `A.row(i)?`
+    /// 代為把關(不必另寫索引檢查)。負索引在 `usize` 下不可表示,故無需 runtime 檢查。
+    /// (對應原始 Go 專案 commit `c0a294a`。)
+    pub fn classify_row(&self, i: usize, epsilon: f64) -> Result<RowKind, LinAlgError> {
+        let coeffs = self.A.row(i)?; // 越界自動上拋 IndexOutOfRange
+        // 係數有任一非零 → 真約束;否則係數全零,由常數決定是 0 = 0 還是 0 = c。
+        let kind = if coeffs.iter().any(|&c| c.abs() > epsilon) {
+            RowKind::Normal
+        } else if self.b.entries()[i].abs() <= epsilon {
+            RowKind::Redundant
+        } else {
+            RowKind::Contradictory
+        };
+        Ok(kind)
+    }
+
+    /// 是否**有任何**方程式是矛盾的(`0 = c`,c ≠ 0)。`true` 代表系統**確定無解**;
+    /// `false` 什麼都不能斷定 —— 同 [`classify_row`](System::classify_row) 的初步限制,
+    /// 隱藏的矛盾可能要列化簡後才現形。
+    pub fn has_contradictory_row(&self, epsilon: f64) -> bool {
+        // i 必在 [0, rows) 內,故 classify_row 不會 Err;用 matches! 免 unwrap。
+        (0..self.A.rows())
+            .any(|i| matches!(self.classify_row(i, epsilon), Ok(RowKind::Contradictory)))
+    }
+}
+
+/// 一條方程式(增廣矩陣的一列)的形態分類 —— [`System::classify_row`] 的回傳。
+///
+/// Rust 的 enum 是封閉和:`RowKind` 只可能是這三者之一,Go 那種 `RowKind(99)` 未定義值
+/// 無法表示,故不需要(也無法寫)fallback 分支。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowKind {
+    /// 至少有一個非零係數 —— 一條真正的約束。
+    Normal,
+    /// `0 = 0`:係數與常數全為零,方程式恆成立、不帶資訊(冗餘)。
+    Redundant,
+    /// `0 = c`(c ≠ 0):係數全零但常數非零,方程式永不成立 —— 整個系統因此無解。
+    Contradictory,
+}
+
+impl fmt::Display for RowKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Display 是人類可讀字串(對照 Go 的 `String()`);括號內標出對應的列形態,
+        // 比 Debug 的純 variant 名多帶一層數學意義。
+        match self {
+            RowKind::Normal => write!(f, "normal"),
+            RowKind::Redundant => write!(f, "redundant (0 = 0)"),
+            RowKind::Contradictory => write!(f, "contradictory (0 = c)"),
+        }
     }
 }
 
@@ -269,6 +328,129 @@ mod tests {
                 .unwrap_err(),
             LinAlgError::DimensionMismatch
         );
+    }
+
+    /// 建單列系統的 helper:`[coeffs | constant]` 一條方程式,方便逐列分類測試。
+    fn one_row(coeffs: Vec<f64>, constant: f64) -> System {
+        System::new(
+            Matrix::from_rows(vec![coeffs]),
+            Vector::from_vec(vec![constant]),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn classify_row_labels_each_kind() {
+        // 有非零係數 → 真正的約束(Normal)
+        assert_eq!(
+            one_row(vec![1.0, 2.0], 3.0).classify_row(0, 0.0).unwrap(),
+            RowKind::Normal
+        );
+        // 係數與常數全零 → 0 = 0(Redundant)
+        assert_eq!(
+            one_row(vec![0.0, 0.0], 0.0).classify_row(0, 0.0).unwrap(),
+            RowKind::Redundant
+        );
+        // 係數全零、常數非零 → 0 = c(Contradictory)
+        assert_eq!(
+            one_row(vec![0.0, 0.0], 5.0).classify_row(0, 0.0).unwrap(),
+            RowKind::Contradictory
+        );
+        // 看的是大小不是正負:負係數仍是真約束、負常數一樣矛盾
+        assert_eq!(
+            one_row(vec![-1.0, 0.0], 0.0).classify_row(0, 0.0).unwrap(),
+            RowKind::Normal
+        );
+        assert_eq!(
+            one_row(vec![0.0, 0.0], -5.0).classify_row(0, 0.0).unwrap(),
+            RowKind::Contradictory
+        );
+    }
+
+    #[test]
+    fn classify_row_judges_zero_within_epsilon() {
+        // 係數側:1e-12 在 1e-9 容差內算零 → Redundant;精確檢查(eps=0)則算非零 → Normal
+        let tiny_coeff = one_row(vec![1e-12, 0.0], 0.0);
+        assert_eq!(
+            tiny_coeff.classify_row(0, 1e-9).unwrap(),
+            RowKind::Redundant
+        );
+        assert_eq!(tiny_coeff.classify_row(0, 0.0).unwrap(), RowKind::Normal);
+
+        // 常數側:係數全零、常數 1e-12。1e-9 容差內常數算零 → Redundant;
+        // 精確檢查下常數非零 → Contradictory
+        let tiny_const = one_row(vec![0.0, 0.0], 1e-12);
+        assert_eq!(
+            tiny_const.classify_row(0, 1e-9).unwrap(),
+            RowKind::Redundant
+        );
+        assert_eq!(
+            tiny_const.classify_row(0, 0.0).unwrap(),
+            RowKind::Contradictory
+        );
+    }
+
+    #[test]
+    fn classify_row_rejects_out_of_range() {
+        // 1 條方程式,問第 5 列 → 越界(由 A.row(i)? 把關,回 IndexOutOfRange)
+        // (Go 還測「負索引」,Rust 的 usize 在編譯期就排除,無需 runtime 測)
+        assert_eq!(
+            one_row(vec![1.0, 2.0], 3.0)
+                .classify_row(5, 0.0)
+                .unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 5, len: 1 }
+        );
+    }
+
+    #[test]
+    fn has_contradictory_row_detects_explicit_contradiction() {
+        // 第 1 列 [0 0 | 5] 是明寫的 0 = 5 → 偵測到矛盾
+        let with_contradiction = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![0.0, 0.0]]),
+            Vector::from_vec(vec![3.0, 5.0]),
+        )
+        .unwrap();
+        assert!(with_contradiction.has_contradictory_row(0.0));
+
+        // 全 Normal 的系統:沒有矛盾列
+        let all_normal = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
+            Vector::from_vec(vec![5.0, 6.0]),
+        )
+        .unwrap();
+        assert!(!all_normal.has_contradictory_row(0.0));
+
+        // 第 1 列 [0 0 | 0] 是冗餘(Redundant)而非矛盾 → false
+        let redundant = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![0.0, 0.0]]),
+            Vector::from_vec(vec![3.0, 0.0]),
+        )
+        .unwrap();
+        assert!(!redundant.has_contradictory_row(0.0));
+    }
+
+    /// 為何這個偵測只是 **preliminary** 的見證:`x+y=2, x+y=3` 顯然無解(x+y 不能同時
+    /// 是 2 和 3),但兩列都不是 `[0…0 | c]` 形態,逐列檢查回 `false`。矛盾要列化簡後
+    /// (`R1 − R0 = [0 0 | 1]`)才現形 —— 完整偵測得等消去法。
+    #[test]
+    fn has_contradictory_row_misses_hidden_contradiction() {
+        let hidden = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0]),
+        )
+        .unwrap();
+        assert!(
+            !hidden.has_contradictory_row(0.0),
+            "矛盾在列化簡前是隱藏的,初步偵測此處應回 false"
+        );
+    }
+
+    #[test]
+    fn row_kind_display_spells_out_each_kind() {
+        // Display 是公開契約,完整比對鎖定字串(同 LinAlgError 的 Display 測試精神)
+        assert_eq!(RowKind::Normal.to_string(), "normal");
+        assert_eq!(RowKind::Redundant.to_string(), "redundant (0 = 0)");
+        assert_eq!(RowKind::Contradictory.to_string(), "contradictory (0 = c)");
     }
 }
 
