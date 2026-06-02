@@ -83,6 +83,40 @@ impl Matrix {
         }
         result
     }
+
+    /// 把矩陣化成 REF,回傳 **pivot 行(基本變數)** 的遞增索引;其個數即 [`rank`](Matrix::rank)。
+    /// 量值在 `epsilon` 內算零(傳 `0.0` 即精確)。
+    /// (對應原始 Go 專案 commit `3b982c5`。)
+    pub fn pivot_columns(&self, epsilon: f64) -> Vec<usize> {
+        // 化 REF,逐列取 pivot_col(回 Option):None(零列)被丟掉、Some(pc) 留下。
+        // REF 的階梯保證收集出來的索引遞增。collect 的型別由回傳型別推斷,免 turbofish。
+        let ref_matrix = self.row_echelon_form(epsilon);
+        (0..ref_matrix.rows())
+            .filter_map(|i| ref_matrix.pivot_col(i, epsilon))
+            .collect()
+    }
+
+    /// 矩陣的 **rank(秩)**:pivot 數 —— 即 column space 的維度、獨立約束的數量。
+    pub fn rank(&self, epsilon: f64) -> usize {
+        self.pivot_columns(epsilon).len()
+    }
+
+    /// 矩陣的 **nullity(零化度)**:null space 的維度、自由變數的個數。由 rank-nullity
+    /// 定理等於 `cols - rank`(`rank ≤ cols`,不會 underflow)。
+    pub fn nullity(&self, epsilon: f64) -> usize {
+        self.cols() - self.rank(epsilon)
+    }
+
+    /// **free 行(自由變數)** 的遞增索引 —— 非 pivot 行。與 [`pivot_columns`](Matrix::pivot_columns)
+    /// 一起恰好分割 `[0, cols)`:每個變數非基本(被 pivot 釘住)即自由。其個數即 nullity。
+    pub fn free_columns(&self, epsilon: f64) -> Vec<usize> {
+        // pivot 的補集:不在 pivot 行裡的每一行都是自由變數。
+        // contains 在小矩陣下的 O(rank) 可接受(學習庫不追效能)。
+        let pivot_cols = self.pivot_columns(epsilon);
+        (0..self.cols())
+            .filter(|c| !pivot_cols.contains(c))
+            .collect()
+    }
 }
 
 /// 消去法會除以 pivot,在「應為零」的格子留下捨入殘差;`REF_EPSILON` 把它吸收掉,
@@ -195,13 +229,70 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn rank_nullity_and_columns_characterize_structure() {
+        // (matrix, want_rank, want_pivot_columns, want_free_columns)
+        let cases: Vec<(Matrix, usize, Vec<usize>, Vec<usize>)> = vec![
+            // 單位矩陣:滿秩、無自由變數
+            (Matrix::identity(3), 3, vec![0, 1, 2], vec![]),
+            // 零矩陣:rank 0、全自由
+            (Matrix::new(2, 3), 0, vec![], vec![0, 1, 2]),
+            // pivot 之間夾著自由行
+            (
+                Matrix::from_rows(vec![vec![1.0, 2.0, 0.0, 3.0], vec![0.0, 0.0, 1.0, 4.0]]),
+                2,
+                vec![0, 2],
+                vec![1, 3],
+            ),
+            // rank deficient(第二列 = 2×第一列)
+            (
+                Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+                1,
+                vec![0],
+                vec![1],
+            ),
+            // 單列、兩個自由行
+            (
+                Matrix::from_rows(vec![vec![1.0, 2.0, 3.0]]),
+                1,
+                vec![0],
+                vec![1, 2],
+            ),
+            // rank 要化簡才看得出來
+            (
+                Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+                1,
+                vec![0],
+                vec![1],
+            ),
+        ];
+        for (m, want_rank, want_pivots, want_free) in cases {
+            assert_eq!(m.rank(REF_EPSILON), want_rank, "rank\n m={m:?}");
+            assert_eq!(
+                m.nullity(REF_EPSILON),
+                m.cols() - want_rank,
+                "nullity\n m={m:?}"
+            );
+            assert_eq!(
+                m.pivot_columns(REF_EPSILON),
+                want_pivots,
+                "pivot_columns\n m={m:?}"
+            );
+            assert_eq!(
+                m.free_columns(REF_EPSILON),
+                want_free,
+                "free_columns\n m={m:?}"
+            );
+        }
+    }
 }
 
 /// 消去法的 property test —— 斷言形態與「保持解集」,而非手算值。
 #[cfg(test)]
 mod laws {
     use super::*;
-    use crate::{System, Vector};
+    use crate::{Solution, System, Vector};
     use proptest::prelude::*;
 
     /// 隨機形狀(1..=4 × 1..=4)、實數元素的矩陣。先選形狀再生資料(`prop_flat_map`)。
@@ -338,6 +429,60 @@ mod laws {
                 from_m.approx_equals(&from_equivalent, CANONICAL_EPSILON),
                 "row-equivalent 矩陣的 RREF 不同\n m={m:?}\n RREF(m)={from_m:?}\n RREF(equiv)={from_equivalent:?}"
             );
+        }
+
+        // rank-nullity 定理:rank + nullity = cols。每個變數非基本即自由,兩數必和為行數。
+        #[test]
+        fn rank_nullity_theorem(m in any_real_matrix()) {
+            prop_assert_eq!(
+                m.rank(REF_EPSILON) + m.nullity(REF_EPSILON),
+                m.cols(),
+                "rank + nullity ≠ cols\n m={:?}", m
+            );
+        }
+
+        // pivot 行與 free 行恰好分割 [0, cols):每一行剛好被涵蓋一次。
+        #[test]
+        fn pivot_and_free_columns_partition(m in any_real_matrix()) {
+            let mut covered = vec![0u32; m.cols()];
+            for c in m.pivot_columns(REF_EPSILON) {
+                covered[c] += 1;
+            }
+            for c in m.free_columns(REF_EPSILON) {
+                covered[c] += 1;
+            }
+            prop_assert!(
+                covered.iter().all(|&n| n == 1),
+                "每一行應剛好被涵蓋一次\n covered={covered:?}\n m={m:?}"
+            );
+        }
+
+        // rank 在 ERO 下不變:矩陣與其 row-equivalent 版本 pivot 數相同。
+        #[test]
+        fn rank_is_invariant_under_eros(
+            m in int_matrix(4, 4),
+            ops in prop::collection::vec(ero(4), 0..8),
+        ) {
+            let equivalent = apply_eros(m.clone(), &ops);
+            prop_assert_eq!(
+                m.rank(REF_EPSILON),
+                equivalent.rank(REF_EPSILON),
+                "rank 在 ERO 下改變了\n m={:?}", m
+            );
+        }
+
+        // nullity 與 solve 一致:植入解(系統相容)→ nullity 0 ⟺ Unique、> 0 ⟺ Infinite。
+        #[test]
+        fn nullity_agrees_with_solve(a in int_matrix(3, 3), x_star in int_vector(3)) {
+            const EPS: f64 = 1e-7;
+            let nullity = a.nullity(EPS);
+            let b = a.multiply_vector(&x_star).unwrap();
+            let s = System::new(a, b).unwrap();
+            match s.solve(EPS) {
+                Solution::Unique(_) => prop_assert_eq!(nullity, 0, "唯一解應對應 nullity 0"),
+                Solution::Infinite => prop_assert!(nullity > 0, "無限多解應對應 nullity > 0"),
+                Solution::Inconsistent => prop_assert!(false, "植入解的系統不該無解"),
+            }
         }
     }
 }
