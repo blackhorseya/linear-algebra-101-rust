@@ -24,6 +24,26 @@ impl Matrix {
         }
     }
 
+    /// n×n 單位矩陣 **Iₙ**:主對角線為 1、其餘為 0。它是矩陣乘法的單位元 ——
+    /// 對任意向量 `I·x = x`(等有了 matrix×matrix,還有 `I·A = A·I = A`)。
+    ///
+    /// 結構上 **Iₙ 的第 j 個 column 正是 eⱼ**(見
+    /// [`Vector::standard`](crate::Vector::standard)):這就是乘上 I 不改變向量的原因 ——
+    /// column view 下 `I·x` 把 x 重建成 `x₀·e₀ + x₁·e₁ + …`,即 x 自己。
+    ///
+    /// 不會失敗(`n = 0` 給 0×0 空矩陣),故回 `Matrix` 而非 `Result`。
+    pub fn identity(n: usize) -> Matrix {
+        Matrix {
+            data: (0..n)
+                .map(|i| {
+                    (0..n)
+                        .map(|j| if i == j { 1.0 } else { 0.0 })
+                        .collect::<Vec<f64>>()
+                })
+                .collect::<Vec<Vec<f64>>>(),
+        }
+    }
+
     /// 精確比較兩矩陣是否相等:維度相同,且每個對應元素完全一致。
     pub fn equals(&self, other: &Matrix) -> bool {
         self.rows() == other.rows() && self.cols() == other.cols() && self.data == other.data
@@ -158,6 +178,40 @@ mod tests {
                 assert_eq!(row.len(), cols, "每列長度應為 cols");
                 assert!(row.iter().all(|&v| v == 0.0), "新矩陣必須全為 0");
             }
+        }
+    }
+
+    #[test]
+    fn identity_builds_diagonal_ones() {
+        assert_eq!(Matrix::identity(1).data, vec![vec![1.0]]);
+        assert_eq!(
+            Matrix::identity(2).data,
+            vec![vec![1.0, 0.0], vec![0.0, 1.0]]
+        );
+        assert_eq!(
+            Matrix::identity(3).data,
+            vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0],
+            ]
+        );
+        // Iₙ 必為方陣
+        for n in [1usize, 2, 3, 5] {
+            assert!(Matrix::identity(n).is_square(), "Iₙ 必為方陣");
+        }
+    }
+
+    #[test]
+    fn identity_columns_are_standard_vectors() {
+        // I·x = x 背後的結構事實:Iₙ 的第 j 個 column 正是 eⱼ。
+        // 用 column view 取出:I·eⱼ 取 I 的第 j 個 column,而它應等於 eⱼ 自己。
+        const N: usize = 4;
+        let id = Matrix::identity(N);
+        for j in 0..N {
+            let ej = Vector::standard(N, j).unwrap();
+            let got = id.multiply_vector(&ej).expect("I·eⱼ 不應出錯");
+            assert!(got.equals(&ej), "I 的第 {j} 個 column 應為 e{j}");
         }
     }
 
