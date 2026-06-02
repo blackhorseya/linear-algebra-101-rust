@@ -22,6 +22,16 @@ impl Vector {
         }
     }
 
+    /// 直接用一組分量建出向量 —— 「給我這串數字」的公開建構子。
+    ///
+    /// 在此之前能拿到的向量只有零向量([`new`](Vector::new))、標準基底
+    /// ([`standard`](Vector::standard))或靠運算產生,缺一個從值建構的入口。
+    /// 跨模組(如 [`Matrix::multiply_vector`](crate::Matrix::multiply_vector))
+    /// 要把算好的分量包回 `Vector` 時也得靠它。長度由 `data` 導出。
+    pub fn from_vec(data: Vec<f64>) -> Vector {
+        Vector { data }
+    }
+
     /// 第 `i` 個標準基底向量 **eᵢ** ∈ Rʳᵒʷˢ:長度 `rows`,只有第 `i` 格是 1、
     /// 其餘為 0。它是 rows×rows 單位矩陣的第 `i` 行,也是「每個向量都是基底向量
     /// 的線性組合」這句話裡的那組基底 —— 純量就是各 eᵢ 的座標
@@ -100,6 +110,14 @@ impl Vector {
         1
     }
 
+    /// 唯讀借出全部分量(`&[f64]`)。欄位仍 private,這只開一個唯讀視窗 ——
+    /// 在此之前外界連向量裡的數字都讀不出來(只能比 `equals`/問 `rows`)。
+    /// 跨模組讀值、或把分量當 scalars 餵給 [`linear_combination`](Vector::linear_combination)
+    /// 時用得到。
+    pub fn entries(&self) -> &[f64] {
+        &self.data
+    }
+
     /// 線性組合:計算 `Σ scalarsᵢ · vectorsᵢ`(第 i 個向量依第 i 個純量縮放後相加)。
     ///
     /// 這是 span、線性獨立、矩陣乘法的基石 —— 把向量集合當「基底候選」,純量就是
@@ -149,6 +167,17 @@ mod tests {
             assert_eq!(v.data.len(), rows);
             assert!(v.data.iter().all(|&x| x == 0.0), "新向量必須全為 0");
         }
+    }
+
+    #[test]
+    fn from_vec_and_entries_round_trip() {
+        // from_vec 是唯一「給定值」的公開建構子,entries 是對應的唯讀視窗;
+        // 兩者互逆:建進去什麼,讀出來就是什麼。
+        let v = Vector::from_vec(vec![1.0, 2.0, 3.0]);
+        assert_eq!(v.rows(), 3);
+        assert_eq!(v.entries(), &[1.0, 2.0, 3.0]);
+        // 空向量也成立
+        assert_eq!(Vector::from_vec(vec![]).entries(), &[] as &[f64]);
     }
 
     #[test]
