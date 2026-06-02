@@ -4,6 +4,7 @@
 //! `feat: implement Matrix with equality, addition and scalar multiply`。
 
 use crate::error::LinAlgError;
+use crate::vector::Vector;
 
 /// 一個以 row-major `Vec<Vec<f64>>` 儲存的二維矩陣。
 ///
@@ -86,6 +87,29 @@ impl Matrix {
             .map(|row| row.iter().map(|&v| v * scalar).collect::<Vec<f64>>())
             .collect::<Vec<Vec<f64>>>();
         Matrix { data }
+    }
+
+    /// 矩陣–向量乘積 `A·v`:m×n 矩陣作用在長度 n 的向量上,得到長度 m 的向量。
+    ///
+    /// 以 **row view** 實作 —— 結果第 i 格 = `self` 第 i 列與 `v` 的 dot product。
+    /// 但更值得記住的是等價的 **column view**:`A·v` 是「用 `v` 各分量當權重,對
+    /// `self` 各 column 做線性組合」,而 `A·eⱼ` 恰好取出第 j 個 column(見測試
+    /// `multiply_vector_by_standard_basis_picks_column`)。這是 span、column space、
+    /// 解 `Ax=b` 的基石。
+    ///
+    /// 維度:`self.cols()` 必須等於 `v.rows()`,結果落在 Rᵐ(= `self.rows()`);
+    /// 不合則回 `Err(LinAlgError::DimensionMismatch)`。
+    pub fn multiply_vector(&self, v: &Vector) -> Result<Vector, LinAlgError> {
+        if self.cols() != v.rows() {
+            return Err(LinAlgError::DimensionMismatch);
+        }
+        let x = v.entries();
+        let data = self
+            .data
+            .iter()
+            .map(|row| row.iter().zip(x).map(|(&a, &xi)| a * xi).sum())
+            .collect::<Vec<f64>>();
+        Ok(Vector::from_vec(data))
     }
 
     /// 轉置:沿主對角線翻轉 —— `self` 的 `(i, j)` 變成結果的 `(j, i)`,
@@ -234,6 +258,61 @@ mod tests {
         let row = matrix_from(vec![vec![1.0, 2.0, 3.0]]);
         assert_eq!(row.transpose().data, vec![vec![1.0], vec![2.0], vec![3.0]]);
     }
+
+    #[test]
+    fn multiply_vector_computes_product() {
+        // 方陣 2×2:[1·5+2·6, 3·5+4·6] = [17, 39]
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let got = a
+            .multiply_vector(&Vector::from_vec(vec![5.0, 6.0]))
+            .unwrap();
+        assert!(
+            got.equals(&Vector::from_vec(vec![17.0, 39.0])),
+            "A·v 應為 [17, 39]"
+        );
+
+        // 非方陣 2×3 壓縮維度:結果落在 R²
+        // [1·1+2·0+3·(-1), 4·1+5·0+6·(-1)] = [-2, -2]
+        let b = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        let got = b
+            .multiply_vector(&Vector::from_vec(vec![1.0, 0.0, -1.0]))
+            .unwrap();
+        assert!(got.equals(&Vector::from_vec(vec![-2.0, -2.0])));
+        assert_eq!(got.rows(), 2, "2×3 · (長度3) 結果應為長度 2");
+
+        // 單位矩陣是乘法單位元:I·x = x
+        let i = matrix_from(vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+        let x = Vector::from_vec(vec![7.0, 8.0]);
+        assert!(i.multiply_vector(&x).unwrap().equals(&x), "I·x 應為 x");
+    }
+
+    #[test]
+    fn multiply_vector_rejects_dimension_mismatch() {
+        // 2×2 的 cols=2,乘長度 3 的向量 → 維度不合
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let v = Vector::from_vec(vec![1.0, 2.0, 3.0]);
+        assert_eq!(
+            a.multiply_vector(&v).unwrap_err(),
+            LinAlgError::DimensionMismatch
+        );
+    }
+
+    #[test]
+    fn multiply_vector_by_standard_basis_picks_column() {
+        // column view 的定義性質:A·eⱼ 取出 A 的第 j 個 column。這也是為什麼
+        // I·x = x、為什麼「Ax 是 column 的線性組合」這句話字面上成立。
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3
+        let want_cols = [
+            Vector::from_vec(vec![1.0, 4.0]),
+            Vector::from_vec(vec![2.0, 5.0]),
+            Vector::from_vec(vec![3.0, 6.0]),
+        ];
+        for (j, want) in want_cols.iter().enumerate() {
+            let e = Vector::standard(a.cols(), j).unwrap();
+            let got = a.multiply_vector(&e).expect("A·eⱼ 不應出錯");
+            assert!(got.equals(want), "A·e{j} 應為第 {j} 個 column");
+        }
+    }
 }
 
 /// 教材定理的 property test —— 用 proptest 驗證 Matrix 該滿足的代數律。
@@ -266,6 +345,12 @@ mod laws {
     fn real_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
         prop::collection::vec(prop::collection::vec(-100.0f64..100.0, cols), rows)
             .prop_map(|data| Matrix { data })
+    }
+
+    /// 產生長度 `n`、元素為 [-10, 10] 整數的向量(f64 下精確,可用 `is_zero` 精確判定)。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
     }
 
     proptest! {
@@ -370,6 +455,28 @@ mod laws {
         fn transpose_involution(a in int_matrix(2, 3)) {
             let transposed_twice = a.transpose().transpose();
             prop_assert!(transposed_twice.equals(&a), "(A^T)^T != A\n A={a:?}");
+        }
+
+        // ===== 矩陣–向量乘積的零性質 =====
+        // 兩條都從 column view 立刻看出來,且都強調結果維度落在 Rᵐ(A 的列數),
+        // 不是 Rⁿ —— 用整數產生器,結果可用精確 `is_zero` 判定。
+
+        // A·0 = 0 —— 任意矩陣乘零向量得零向量。0 ∈ Rⁿ,結果 ∈ Rᵐ。
+        #[test]
+        fn multiply_by_zero_vector_is_zero(a in int_matrix(2, 3)) {
+            let zero = Vector::new(a.cols()); // 0 ∈ Rⁿ(n = A.cols())
+            let got = a.multiply_vector(&zero).unwrap();
+            prop_assert_eq!(got.rows(), a.rows(), "A·0 維度應為 A.rows()");
+            prop_assert!(got.is_zero(), "A·0 應為零向量\n A={a:?}");
+        }
+
+        // O·v = 0 —— 零矩陣乘任意向量得零向量。
+        #[test]
+        fn zero_matrix_times_vector_is_zero(v in int_vector(3)) {
+            let o = Matrix::new(2, 3); // 零矩陣 O,2×3
+            let got = o.multiply_vector(&v).unwrap();
+            prop_assert_eq!(got.rows(), o.rows(), "O·v 維度應為 O.rows()");
+            prop_assert!(got.is_zero(), "O·v 應為零向量\n v={v:?}");
         }
     }
 }
