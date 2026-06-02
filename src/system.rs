@@ -51,6 +51,29 @@ impl System {
         Matrix::from_rows(augmented_rows)
     }
 
+    /// 把增廣矩陣 `[A | b]` 拆回方程組 —— [`to_augmented_matrix`](System::to_augmented_matrix)
+    /// 的逆:最後一行剝成常數向量 `b`,其餘各行組回係數矩陣 `A`。
+    ///
+    /// 依 from-constructor 慣例**取走** `aug` 的所有權(對齊 [`Matrix::from_rows`] /
+    /// [`Vector::from_vec`])。注意「取走」在這裡不省記憶體:本函式只能走 `Matrix` 的
+    /// public API(`column` / `row`),兩者都回拷貝 —— 所有權的意義在語意,不在效率。
+    /// Go 版需手動 defensive copy 並測試結果不與來源 aliasing;Rust 由模組封裝在結構上
+    /// 保證,該測試無從失敗,故不移植。
+    ///
+    /// `aug.cols() == 0` 時沒有最後一行可剝成常數 → `Err(LinAlgError::EmptyMatrix)`。
+    /// (對應原始 Go 專案 commit `a49be2e`。)
+    pub fn from_augmented_matrix(aug: Matrix) -> Result<System, LinAlgError> {
+        if aug.cols() == 0 {
+            return Err(LinAlgError::EmptyMatrix);
+        }
+        let n = aug.cols() - 1;
+        let b = aug.column(n)?; // 最後一行就是常數向量 b
+        let a_rows = (0..aug.rows())
+            .map(|i| aug.row(i).map(|row| row[..n].to_vec())) // 各列去掉最後一格 → A 的列
+            .collect::<Result<Vec<_>, _>>()?;
+        System::new(Matrix::from_rows(a_rows), b)
+    }
+
     /// 驗證候選向量是否為本系統的解,即 `A·candidate` 是否等於常數向量 `b`。
     ///
     /// 元素是 `f64`,故用容差 `epsilon` 比較而非精確相等:傳 `0.0` 要求精確,
@@ -147,6 +170,52 @@ mod tests {
     }
 
     #[test]
+    fn from_augmented_matrix_splits_off_last_column() {
+        // 方陣:[1 2 | 5; 3 4 | 6] → A = [1 2; 3 4]、b = [5, 6]
+        let sys = System::from_augmented_matrix(Matrix::from_rows(vec![
+            vec![1.0, 2.0, 5.0],
+            vec![3.0, 4.0, 6.0],
+        ]))
+        .expect("有 column 的增廣矩陣應能拆解");
+        assert!(
+            sys.A
+                .equals(&Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]))
+        );
+        assert!(sys.b.equals(&Vector::from_vec(vec![5.0, 6.0])));
+
+        // 單一方程式 2x + 3y = 4:[2 3 | 4] → A = [2 3]、b = [4]
+        let single =
+            System::from_augmented_matrix(Matrix::from_rows(vec![vec![2.0, 3.0, 4.0]])).unwrap();
+        assert!(single.A.equals(&Matrix::from_rows(vec![vec![2.0, 3.0]])));
+        assert!(single.b.equals(&Vector::from_vec(vec![4.0])));
+    }
+
+    #[test]
+    fn from_augmented_matrix_rejects_no_columns() {
+        // 0 行的矩陣沒有最後一行可剝成常數 → EmptyMatrix
+        // (Go 還測「結果為 nil」,Rust 由 Result 型別保證錯誤時不存在 System,無需測)
+        assert_eq!(
+            System::from_augmented_matrix(Matrix::new(2, 0)).unwrap_err(),
+            LinAlgError::EmptyMatrix
+        );
+    }
+
+    /// `from_augmented_matrix` 是 `to_augmented_matrix` 的逆:建出 `[A | b]` 再拆回,
+    /// 應原封不動拿回 A 與 b。兩者是一對逆函數。
+    #[test]
+    fn augmented_matrix_round_trip() {
+        // 長方(3 式 2 未知數),確保不只方陣成立
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]);
+        let b = Vector::from_vec(vec![7.0, 8.0, 9.0]);
+        let sys = System::new(a.clone(), b.clone()).unwrap();
+
+        let recovered =
+            System::from_augmented_matrix(sys.to_augmented_matrix()).expect("round-trip 不應失敗");
+        assert!(recovered.A.equals(&a), "round-trip 後的 A 應與原本相同");
+        assert!(recovered.b.equals(&b), "round-trip 後的 b 應與原本相同");
+    }
+
+    #[test]
     fn is_solution_verifies_candidate_against_ax_eq_b() {
         // x + y = 3, x - y = 1  ⇒  唯一解 (2, 1)
         let sys = System::new(
@@ -200,5 +269,113 @@ mod tests {
                 .unwrap_err(),
             LinAlgError::DimensionMismatch
         );
+    }
+}
+
+/// 等價律的 property test —— 驗證高斯消去法的定理基礎:對增廣矩陣 `[A | b]` 施作
+/// 任意基本列運算(ERO)序列,拆回的方程組與原系統**同解**。這是 `matrix.rs` 裡
+/// ERO 可逆律在 System 層的後果(一次 ERO = 左乘一個可逆 elementary matrix E,
+/// `Ax = b` 變成等價的 `EAx = Eb`)。
+///
+/// **陷阱(為何不能隨機取 x 比 `is_solution`):** 解集是 Rⁿ 中零測度的仿射子空間,
+/// 隨機實數 x 幾乎必非解 —— 兩個系統都回 `false`,測試對「根本不等價」的系統也會通過。
+/// 對策是**植入已知解**:取 A 與 x*,令 `b := A·x*`,x* 依建構即為 S 的解。經隨機 ERO
+/// 序列得 S' 後,驗 x* 仍是解、且 S 與 S' 對每個探針給出相同判定。
+///
+/// ERO 純量取小的非零整數,讓 A'、b' 全程保持整數,植入的整數解精確留存,可用
+/// `epsilon = 0` 精確比較(同 `matrix.rs` laws 的整數策略)。
+#[cfg(test)]
+mod laws {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// 產生 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下精確)。
+    fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
+            Matrix::from_rows(
+                grid.into_iter()
+                    .map(|row| row.into_iter().map(|v| v as f64).collect())
+                    .collect(),
+            )
+        })
+    }
+
+    /// 產生長度 `n`、元素為 [-10, 10] 整數的向量(f64 下精確)。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 一個基本列運算的描述子 —— 把「做哪個 ERO、參數多少」當資料生成,再於測試裡施作。
+    /// 參數**依建構即滿足各運算的不變式**(scale 的 c 非零、add 的 dst ≠ src),
+    /// 故施作時 `unwrap` 必不 panic。
+    #[derive(Debug, Clone)]
+    enum Ero {
+        Swap(usize, usize),
+        Scale(usize, f64),
+        AddScaled(usize, usize, f64),
+    }
+
+    /// 產生作用在 `rows`(須 ≥ 2)列矩陣上的合法 ERO。
+    fn ero(rows: usize) -> impl Strategy<Value = Ero> {
+        // 非零整數純量(避開 ScaleByZero):從 {-3..=-1} ∪ {1..=3} 取。
+        let nonzero = prop_oneof![-3i64..=-1, 1i64..=3].prop_map(|c| c as f64);
+        prop_oneof![
+            (0..rows, 0..rows).prop_map(|(i, j)| Ero::Swap(i, j)),
+            (0..rows, nonzero.clone()).prop_map(|(i, c)| Ero::Scale(i, c)),
+            // dst ≠ src 依建構成立:src = (dst + step) mod rows,step ∈ [1, rows)
+            (0..rows, 1..rows, nonzero).prop_map(move |(dst, step, c)| Ero::AddScaled(
+                dst,
+                (dst + step) % rows,
+                c
+            )),
+        ]
+    }
+
+    /// 把一串 ERO 依序原地施作在 `m` 上。所有參數合法 → `unwrap` 安全。
+    fn apply_eros(mut m: Matrix, ops: &[Ero]) -> Matrix {
+        for op in ops {
+            match *op {
+                Ero::Swap(i, j) => m.swap_rows(i, j).unwrap(),
+                Ero::Scale(i, c) => m.scale_row(i, c).unwrap(),
+                Ero::AddScaled(dst, src, c) => m.add_scaled_row(dst, src, c).unwrap(),
+            }
+        }
+        m
+    }
+
+    proptest! {
+        // 對 [A | b] 做任意 ERO 序列 → 解集不變(高斯消去法的定理基礎)。
+        #[test]
+        fn row_ops_preserve_solution_set(
+            a in int_matrix(3, 3),
+            x_star in int_vector(3),
+            ops in prop::collection::vec(ero(3), 0..8),
+            extra_probes in prop::collection::vec(int_vector(3), 0..5),
+        ) {
+            // 植入:b := A·x*,使 x* 依建構即為 S 的解。
+            let b = a.multiply_vector(&x_star).unwrap();
+            let s = System::new(a, b).unwrap();
+            prop_assert!(s.is_solution(&x_star, 0.0).unwrap(), "植入的 x* 應為 S 的解");
+
+            // 對 [A | b] 跑隨機 ERO 序列,再拆回 S'。
+            let aug = apply_eros(s.to_augmented_matrix(), &ops);
+            let s_prime = System::from_augmented_matrix(aug).unwrap();
+
+            // (1) 正向:植入的解必須在變換後存活。
+            prop_assert!(
+                s_prime.is_solution(&x_star, 0.0).unwrap(),
+                "x* 應在 ERO 序列後仍是 S' 的解"
+            );
+
+            // (2) 一致:S 與 S' 同解集 → 對每個探針給出相同判定。探針 = x*(兩邊 true)
+            //     + 隨機整數向量(幾乎必為兩邊 false;偶爾命中解也仍須兩邊一致)。
+            let probes = std::iter::once(x_star.clone()).chain(extra_probes);
+            for y in probes {
+                let in_s = s.is_solution(&y, 0.0).unwrap();
+                let in_s_prime = s_prime.is_solution(&y, 0.0).unwrap();
+                prop_assert_eq!(in_s, in_s_prime, "S 與 S' 對探針判定不一致 → ERO 改變了解集");
+            }
+        }
     }
 }

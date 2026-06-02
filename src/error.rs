@@ -33,6 +33,10 @@ pub enum LinAlgError {
     /// 純量縮放、在係數為 −1 時不可逆。(見
     /// [`Matrix::add_scaled_row`](crate::Matrix::add_scaled_row)。)
     SameRow,
+    /// 矩陣沒有任何 column(`cols() == 0`)—— 對需要至少一行的運算而言是空輸入。
+    /// 例:把增廣矩陣 `[A | b]` 拆回方程組時,沒有最後一行可剝成常數向量 b。(見
+    /// [`System::from_augmented_matrix`](crate::System::from_augmented_matrix)。)
+    EmptyMatrix,
 }
 
 impl fmt::Display for LinAlgError {
@@ -64,6 +68,9 @@ impl fmt::Display for LinAlgError {
                     f,
                     "rows must differ: add-scaled-row would not be invertible"
                 )
+            }
+            LinAlgError::EmptyMatrix => {
+                write!(f, "empty matrix: operation requires at least one column")
             }
         }
     }
@@ -126,6 +133,14 @@ mod tests {
         assert_eq!(
             LinAlgError::SameRow.to_string(),
             "rows must differ: add-scaled-row would not be invertible"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_empty_matrix() {
+        assert_eq!(
+            LinAlgError::EmptyMatrix.to_string(),
+            "empty matrix: operation requires at least one column"
         );
     }
 
