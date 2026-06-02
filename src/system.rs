@@ -120,6 +120,18 @@ impl System {
             .any(|i| matches!(self.classify_row(i, epsilon), Ok(RowKind::Contradictory)))
     }
 
+    /// 系統 `Ax = b` 是否**至少有一個解**(相容)。依一致性定理(Theorem 1.5)的條件 (d):
+    /// `rank(A) == rank([A | b])` —— 增廣 b 至多讓 rank 多 1,故兩者相等 ⟺ b 沒帶進新的
+    /// pivot ⟺ b 落在 A 的 column space 裡。
+    ///
+    /// 這是 [`has_contradictory_row`](System::has_contradictory_row) 的**完整版**:它會
+    /// 化簡系統,故能抓到要化簡後才現形的隱藏矛盾(`x+y=2, x+y=3`),逐列檢查抓不到。
+    /// (對應原始 Go 專案 commit `7a4739e`。)
+    pub fn is_consistent(&self, epsilon: f64) -> bool {
+        // Theorem 1.5 條件 (d):b 沒帶進新 pivot ⟺ rank 不變 ⟺ 系統有解。
+        self.A.rank(epsilon) == self.to_augmented_matrix().rank(epsilon)
+    }
+
     /// 求解線性系統:把增廣矩陣 `[A | b]` 化成 RREF,再讀出三種結局之一([`Solution`])。
     /// 真正的工都在化簡;`solve` 只是解讀那座階梯。量值在 `epsilon` 內算零(傳 `0.0` 即精確)。
     ///
@@ -582,6 +594,60 @@ mod tests {
         .unwrap();
         assert!(matches!(under.solve(SOLVE_EPSILON), Solution::Infinite));
     }
+
+    #[test]
+    fn is_consistent_classifies_systems() {
+        // 唯一解 → 相容
+        let unique = System::new(
+            Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![5.0, 3.0]),
+        )
+        .unwrap();
+        assert!(unique.is_consistent(SOLVE_EPSILON));
+
+        // 無限多解 → 仍相容
+        let infinite = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+            Vector::from_vec(vec![3.0, 6.0]),
+        )
+        .unwrap();
+        assert!(infinite.is_consistent(SOLVE_EPSILON));
+
+        // 隱藏矛盾 x+y=2, x+y=3:rank A = 1 但 rank[A|b] = 2 → 不相容
+        let hidden = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0]),
+        )
+        .unwrap();
+        assert!(!hidden.is_consistent(SOLVE_EPSILON));
+
+        // 係數成比例、常數不相容 → 不相容
+        let proportional = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+            Vector::from_vec(vec![1.0, 5.0]),
+        )
+        .unwrap();
+        assert!(!proportional.is_consistent(SOLVE_EPSILON));
+    }
+
+    /// preliminary → complete 的收尾:`x+y=2, x+y=3` 騙得過逐列的 `has_contradictory_row`
+    /// (沒有任何一列字面是 `[0…0 | c]`),但 `is_consistent` 會化簡系統、正確判定無解。
+    #[test]
+    fn is_consistent_catches_hidden_contradiction() {
+        let hidden = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0]),
+        )
+        .unwrap();
+        assert!(
+            !hidden.has_contradictory_row(0.0),
+            "逐列檢查應被隱藏矛盾騙過"
+        );
+        assert!(
+            !hidden.is_consistent(SOLVE_EPSILON),
+            "完整判準應抓到隱藏矛盾"
+        );
+    }
 }
 
 /// 等價律的 property test —— 驗證高斯消去法的定理基礎:對增廣矩陣 `[A | b]` 施作
@@ -616,6 +682,25 @@ mod laws {
     fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
         prop::collection::vec(-10i64..=10, n)
             .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 產生隨機形狀(1..=5 × 1..=5)的整數矩陣 A 與長度 = A 列數的整數向量 b。b 與 A
+    /// **獨立**(非植入解),故相容/不相容兩類系統都會出現,適合驗一致性判準。
+    fn system_parts() -> impl Strategy<Value = (Matrix, Vector)> {
+        (1usize..=5, 1usize..=5).prop_flat_map(|(rows, cols)| {
+            let a = prop::collection::vec(prop::collection::vec(-5i64..=5, cols), rows).prop_map(
+                |grid| {
+                    Matrix::from_rows(
+                        grid.into_iter()
+                            .map(|row| row.into_iter().map(|v| v as f64).collect())
+                            .collect(),
+                    )
+                },
+            );
+            let b = prop::collection::vec(-5i64..=5, rows)
+                .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()));
+            (a, b)
+        })
     }
 
     /// 一個基本列運算的描述子 —— 把「做哪個 ERO、參數多少」當資料生成,再於測試裡施作。
@@ -715,6 +800,45 @@ mod laws {
                 // 奇異 A:x* 只是無限多解之一,無從進一步比對
                 Solution::Infinite => {}
             }
+        }
+
+        // Theorem 1.5 化為可執行斷言:跨隨機系統,三個判準 —— (a) solve 找得到解、
+        // (c) [A|b] 的 RREF 常數行無 pivot、(d) rank(A) == rank([A|b]) —— 必須給出同一個
+        // 判定,且 is_consistent 與三者皆一致。隨機 b 在各種形狀(含高瘦 A)下會混出
+        // 相容與不相容兩類系統。
+        #[test]
+        fn consistency_theorem_conditions_agree((a, b) in system_parts()) {
+            const EPS: f64 = 1e-9;
+            let cols = a.cols();
+            let s = System::new(a.clone(), b.clone()).unwrap();
+            let aug = s.to_augmented_matrix();
+
+            let cond_a = !matches!(s.solve(EPS), Solution::Inconsistent); // (a)
+            let rref = aug.reduced_row_echelon_form(EPS); // (c)
+            let cond_c = (0..rref.rows()).all(|i| rref.pivot_col(i, EPS) != Some(cols));
+            let cond_d = a.rank(EPS) == aug.rank(EPS); // (d)
+            let got = s.is_consistent(EPS);
+
+            prop_assert!(
+                got == cond_a && got == cond_c && got == cond_d,
+                "一致性判準不一致: is_consistent={got} (a)={cond_a} (c)={cond_c} (d)={cond_d}\n a={a:?}\n b={b:?}"
+            );
+        }
+
+        // (c)⟺(d) 背後的結構事實:接一行至多讓 rank 多 1,故 rank[A|b] 只可能是 rank A
+        // (b 沒帶進 pivot → 相容)或 rank A + 1(b 帶進 pivot → 不相容),別無其他。
+        #[test]
+        fn augmented_rank_is_at_most_one_more((a, b) in system_parts()) {
+            const EPS: f64 = 1e-9;
+            let rank_a = a.rank(EPS);
+            let rank_aug = System::new(a.clone(), b)
+                .unwrap()
+                .to_augmented_matrix()
+                .rank(EPS);
+            prop_assert!(
+                rank_aug == rank_a || rank_aug == rank_a + 1,
+                "rank[A|b]={rank_aug},應為 rank A({rank_a})或 +1\n a={a:?}"
+            );
         }
     }
 }
