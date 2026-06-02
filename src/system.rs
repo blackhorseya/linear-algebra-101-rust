@@ -119,6 +119,34 @@ impl System {
         (0..self.A.rows())
             .any(|i| matches!(self.classify_row(i, epsilon), Ok(RowKind::Contradictory)))
     }
+
+    /// 求解線性系統:把增廣矩陣 `[A | b]` 化成 RREF,再讀出三種結局之一([`Solution`])。
+    /// 真正的工都在化簡;`solve` 只是解讀那座階梯。量值在 `epsilon` 內算零(傳 `0.0` 即精確)。
+    ///
+    /// 這一步終於能抓到 [`classify_row`](System::classify_row) 抓不到的**隱藏矛盾**:
+    /// `x+y=2, x+y=3` 化簡後冒出 `[0 0 | 1]` → [`Solution::Inconsistent`]。
+    /// (對應原始 Go 專案 commit `8839879`。)
+    pub fn solve(&self, epsilon: f64) -> Solution {
+        let n = self.A.cols(); // 未知數個數;增廣矩陣最後一行(index n)是常數行
+        let rref = self.to_augmented_matrix().reduced_row_echelon_form(epsilon);
+        let mut coords = vec![0.0; n]; // 解座標,自由變數留 0
+        let mut rank = 0;
+        for i in 0..rref.rows() {
+            let Some(pc) = rref.pivot_col(i, epsilon) else {
+                continue; // 零列不帶約束
+            };
+            if pc == n {
+                return Solution::Inconsistent; // pivot 落在常數行 → 0 = 1,矛盾
+            }
+            coords[pc] = rref.row(i).unwrap()[n]; // 此 pivot 把第 pc 個未知數釘成那個常數
+            rank += 1;
+        }
+        if rank < n {
+            Solution::Infinite // 還有自由變數
+        } else {
+            Solution::Unique(Vector::from_vec(coords))
+        }
+    }
 }
 
 /// 一條方程式(增廣矩陣的一列)的形態分類 —— [`System::classify_row`] 的回傳。
@@ -145,6 +173,21 @@ impl fmt::Display for RowKind {
             RowKind::Contradictory => write!(f, "contradictory (0 = c)"),
         }
     }
+}
+
+/// 求解線性系統的三種結局 —— [`System::solve`] 的回傳。
+///
+/// 解向量只長在 `Unique` 那一支:它**存在 ⟺ 系統有唯一解**,由型別保證(對比 Go 用
+/// 「種類 + 可能為 nil 的 vector 欄位」,得靠不變式約束、還要測 nil)。呼叫端被 `match`
+/// 逼著面對三種結局,而解向量只有在 `Unique(v)` 的 arm 裡才拿得到。
+#[derive(Debug)]
+pub enum Solution {
+    /// 無解:系統矛盾(化簡後出現 `0 = c`,c ≠ 0 的列)。
+    Inconsistent,
+    /// 唯一解:恰好一個向量滿足整個系統,解就在此。
+    Unique(Vector),
+    /// 無限多解:系統相容,但有自由變數(pivot 數 < 未知數個數)。
+    Infinite,
 }
 
 #[cfg(test)]
@@ -452,6 +495,93 @@ mod tests {
         assert_eq!(RowKind::Redundant.to_string(), "redundant (0 = 0)");
         assert_eq!(RowKind::Contradictory.to_string(), "contradictory (0 = c)");
     }
+
+    /// 解整數系統時的容差:消去法的除法會引入捨入,讀解時用容差比較。
+    const SOLVE_EPSILON: f64 = 1e-9;
+
+    #[test]
+    fn solve_finds_unique_solution() {
+        // 2x + y = 5, x + y = 3 ⇒ (2, 1)
+        let s = System::new(
+            Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![5.0, 3.0]),
+        )
+        .unwrap();
+        let Solution::Unique(x) = s.solve(SOLVE_EPSILON) else {
+            panic!("方陣可逆系統應有唯一解");
+        };
+        assert!(x.approx_equals(&Vector::from_vec(vec![2.0, 1.0]), SOLVE_EPSILON));
+
+        // 3×3 可逆:A·[1,1,1]
+        let s = System::new(
+            Matrix::from_rows(vec![
+                vec![1.0, 2.0, 3.0],
+                vec![0.0, 1.0, 4.0],
+                vec![5.0, 6.0, 0.0],
+            ]),
+            Vector::from_vec(vec![6.0, 5.0, 11.0]),
+        )
+        .unwrap();
+        let Solution::Unique(x) = s.solve(SOLVE_EPSILON) else {
+            panic!("3×3 可逆系統應有唯一解");
+        };
+        assert!(x.approx_equals(&Vector::from_vec(vec![1.0, 1.0, 1.0]), SOLVE_EPSILON));
+
+        // 超定但相容:3 式 2 未知數,仍唯一
+        let s = System::new(
+            Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0, 5.0]),
+        )
+        .unwrap();
+        let Solution::Unique(x) = s.solve(SOLVE_EPSILON) else {
+            panic!("相容的超定系統應有唯一解");
+        };
+        assert!(x.approx_equals(&Vector::from_vec(vec![2.0, 3.0]), SOLVE_EPSILON));
+    }
+
+    #[test]
+    fn solve_reports_inconsistent() {
+        // 隱藏矛盾:x+y=2, x+y=3 —— classify_row 抓不到,化簡後冒出 [0 0 | 1]
+        let hidden = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0]),
+        )
+        .unwrap();
+        assert!(matches!(
+            hidden.solve(SOLVE_EPSILON),
+            Solution::Inconsistent
+        ));
+
+        // 係數成比例、常數不相容
+        let proportional = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+            Vector::from_vec(vec![1.0, 5.0]),
+        )
+        .unwrap();
+        assert!(matches!(
+            proportional.solve(SOLVE_EPSILON),
+            Solution::Inconsistent
+        ));
+    }
+
+    #[test]
+    fn solve_reports_infinite() {
+        // 第二式 = 2×第一式、常數也相容 → 一條方程式、兩未知數
+        let redundant = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+            Vector::from_vec(vec![3.0, 6.0]),
+        )
+        .unwrap();
+        assert!(matches!(redundant.solve(SOLVE_EPSILON), Solution::Infinite));
+
+        // 欠定:一式兩未知數 → 一整條線的解
+        let under = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0]),
+        )
+        .unwrap();
+        assert!(matches!(under.solve(SOLVE_EPSILON), Solution::Infinite));
+    }
 }
 
 /// 等價律的 property test —— 驗證高斯消去法的定理基礎:對增廣矩陣 `[A | b]` 施作
@@ -557,6 +687,33 @@ mod laws {
                 let in_s = s.is_solution(&y, 0.0).unwrap();
                 let in_s_prime = s_prime.is_solution(&y, 0.0).unwrap();
                 prop_assert_eq!(in_s, in_s_prime, "S 與 S' 對探針判定不一致 → ERO 改變了解集");
+            }
+        }
+
+        // 交叉驗證 solve:植入已知解 x*(b := A·x*),系統必相容 → solve 不該回 Inconsistent。
+        // 回 Unique 時那個向量必須 == x*、且通過獨立的 is_solution —— 一條路徑靠化 RREF、
+        // 另一條靠算 A·x,兩條無關路徑得出同答案是兩者皆正確的強證據。
+        #[test]
+        fn solve_agrees_with_is_solution_on_planted_systems(
+            a in int_matrix(3, 3),
+            x_star in int_vector(3),
+        ) {
+            const EPS: f64 = 1e-7; // 化簡引入捨入,用容差
+            let b = a.multiply_vector(&x_star).unwrap();
+            let s = System::new(a, b).unwrap();
+            match s.solve(EPS) {
+                Solution::Inconsistent => {
+                    prop_assert!(false, "植入解的系統不該無解\n x*={x_star:?}");
+                }
+                Solution::Unique(x) => {
+                    prop_assert!(
+                        x.approx_equals(&x_star, EPS),
+                        "唯一解應為植入的 x*\n got={x:?}\n x*={x_star:?}"
+                    );
+                    prop_assert!(s.is_solution(&x, EPS).unwrap(), "solve 的答案應通過 is_solution");
+                }
+                // 奇異 A:x* 只是無限多解之一,無從進一步比對
+                Solution::Infinite => {}
             }
         }
     }
