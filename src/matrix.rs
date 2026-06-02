@@ -284,13 +284,16 @@ impl Matrix {
         Ok(())
     }
 
-    /// 私有輔助:回第 `i` 列的 **pivot(leading entry)** 所在 column —— 由左數來第一個
+    /// crate 內部輔助:回第 `i` 列的 **pivot(leading entry)** 所在 column —— 由左數來第一個
     /// 量值超過 `epsilon` 的位置;全零列(在 `epsilon` 內)回 `None`。
     ///
     /// `Iterator::position` 天生回 `Option<usize>`,正好把 Go 用 `-1` 哨兵代表「無 pivot」
-    /// 換成型別安全的「沒有就是 `None`」—— 呼叫端不可能拿它去當 index。私有助手,只由下面
-    /// 的 echelon 述詞以合法的 `i` 呼叫,故不另做越界檢查。
-    fn pivot_col(&self, i: usize, epsilon: f64) -> Option<usize> {
+    /// 換成型別安全的「沒有就是 `None`」—— 呼叫端不可能拿它去當 index。
+    ///
+    /// `pub(crate)`:除了本檔的 echelon 述詞,`elimination` 模組的 backward pass 也要用它
+    /// 找每列 pivot。是 crate 內部共用的積木,但**不**屬於公開 API。呼叫端傳合法的 `i`,
+    /// 故不另做越界檢查。
+    pub(crate) fn pivot_col(&self, i: usize, epsilon: f64) -> Option<usize> {
         self.data[i].iter().position(|&v| v.abs() > epsilon)
     }
 

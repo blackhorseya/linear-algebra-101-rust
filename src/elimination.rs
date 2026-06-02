@@ -58,6 +58,31 @@ impl Matrix {
         }
         result
     }
+
+    /// 高斯消去法的完整化簡:回傳一個 **reduced row echelon form(RREF)** 的新矩陣。
+    /// 先跑 forward pass 到 REF,再 backward pass:由最底的 pivot 往上,把每個 pivot
+    /// 正規化成 1、清掉它**上方**的格子。與 REF 不同,一個矩陣的 **RREF 是唯一的**。
+    /// 呼叫端的矩陣不被更動。
+    ///
+    /// `epsilon` 是「算零」的門檻(傳 `0.0` 即精確)。
+    /// (對應原始 Go 專案 commit `125d40d`。)
+    pub fn reduced_row_echelon_form(&self, epsilon: f64) -> Matrix {
+        let mut result = self.row_echelon_form(epsilon); // forward pass → REF(獨立 owned)
+        // backward pass:由下而上,每個 pivot 正規化成 1 並清掉其上方。由下而上才能單趟
+        // 搞定 —— 用某 pivot 列往上清時,它在「更右邊 pivot column」的位置已是零,不擾動已完成的。
+        for row in (0..result.rows()).rev() {
+            let Some(pc) = result.pivot_col(row, epsilon) else {
+                continue; // 零列沒有 pivot,跳過
+            };
+            let pivot_val = result.row(row).unwrap()[pc];
+            result.scale_row(row, 1.0 / pivot_val).unwrap(); // pivot → 1(|pivot| > ε,不除以零)
+            for r in 0..row {
+                let factor = result.row(r).unwrap()[pc]; // pivot 已是 1,factor 就是那一格
+                result.add_scaled_row(r, row, -factor).unwrap(); // r < row → r != row
+            }
+        }
+        result
+    }
 }
 
 /// 消去法會除以 pivot,在「應為零」的格子留下捨入殘差;`REF_EPSILON` 把它吸收掉,
@@ -112,6 +137,64 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn reduced_row_echelon_form_reduces_representative_shapes() {
+        let cases = vec![
+            // 已是 RREF
+            Matrix::from_rows(vec![
+                vec![1.0, 0.0, 3.0],
+                vec![0.0, 1.0, 4.0],
+                vec![0.0, 0.0, 0.0],
+            ]),
+            // 需要正規化 pivot + 清上方
+            Matrix::from_rows(vec![vec![2.0, 4.0, 2.0], vec![0.0, 3.0, 6.0]]),
+            // rank deficient
+            Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![2.0, 4.0, 6.0]]),
+            // 零 column 讓 pivot 跳過
+            Matrix::from_rows(vec![vec![0.0, 2.0], vec![0.0, 4.0]]),
+            // 全零、單列、高
+            Matrix::new(3, 3),
+            Matrix::from_rows(vec![vec![0.0, 0.0, 3.0]]),
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]),
+        ];
+        for m in cases {
+            let rref = m.reduced_row_echelon_form(REF_EPSILON);
+            assert!(
+                rref.is_reduced_row_echelon_form(REF_EPSILON),
+                "輸出應在 RREF\n m={:?}\n rref={:?}",
+                m,
+                rref
+            );
+            assert_eq!(
+                (rref.rows(), rref.cols()),
+                (m.rows(), m.cols()),
+                "維度應保持"
+            );
+        }
+    }
+
+    #[test]
+    fn reduced_row_echelon_form_of_invertible_is_identity() {
+        // 可逆矩陣一路化簡到單位矩陣 —— 這正是「可逆 A 的 Ax=b 有唯一解 x=A⁻¹b」的根據。
+        let invertibles = vec![
+            Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]),
+            Matrix::from_rows(vec![
+                vec![1.0, 2.0, 3.0],
+                vec![0.0, 1.0, 4.0],
+                vec![5.0, 6.0, 0.0],
+            ]),
+        ];
+        for m in invertibles {
+            let rref = m.reduced_row_echelon_form(REF_EPSILON);
+            assert!(
+                rref.approx_equals(&Matrix::identity(m.rows()), REF_EPSILON),
+                "可逆矩陣的 RREF 應為單位矩陣\n m={:?}\n rref={:?}",
+                m,
+                rref
+            );
+        }
+    }
 }
 
 /// 消去法的 property test —— 斷言形態與「保持解集」,而非手算值。
@@ -146,6 +229,42 @@ mod laws {
             .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
     }
 
+    /// 一個 ERO 的描述子 —— 用來生成隨機的 row-equivalent 矩陣(給 canonical 測試)。
+    /// 參數依建構即合法(scale 的 c 非零、add 的 dst ≠ src),施作時 `unwrap` 安全。
+    #[derive(Debug, Clone)]
+    enum Ero {
+        Swap(usize, usize),
+        Scale(usize, f64),
+        AddScaled(usize, usize, f64),
+    }
+
+    /// 產生作用在 `rows`(須 ≥ 2)列矩陣上的合法 ERO,純量為小的非零整數。
+    fn ero(rows: usize) -> impl Strategy<Value = Ero> {
+        let nonzero = prop_oneof![-3i64..=-1, 1i64..=3].prop_map(|c| c as f64);
+        prop_oneof![
+            (0..rows, 0..rows).prop_map(|(i, j)| Ero::Swap(i, j)),
+            (0..rows, nonzero.clone()).prop_map(|(i, c)| Ero::Scale(i, c)),
+            // dst ≠ src 依建構成立:src = (dst + step) mod rows,step ∈ [1, rows)
+            (0..rows, 1..rows, nonzero).prop_map(move |(dst, step, c)| Ero::AddScaled(
+                dst,
+                (dst + step) % rows,
+                c
+            )),
+        ]
+    }
+
+    /// 把一串 ERO 依序原地施作在 `m` 上。所有參數合法 → `unwrap` 安全。
+    fn apply_eros(mut m: Matrix, ops: &[Ero]) -> Matrix {
+        for op in ops {
+            match *op {
+                Ero::Swap(i, j) => m.swap_rows(i, j).unwrap(),
+                Ero::Scale(i, c) => m.scale_row(i, c).unwrap(),
+                Ero::AddScaled(dst, src, c) => m.add_scaled_row(dst, src, c).unwrap(),
+            }
+        }
+        m
+    }
+
     proptest! {
         // 招牌性質:無論形狀或秩,forward pass 都落在 REF(且維度不變)。
         #[test]
@@ -174,6 +293,50 @@ mod laws {
             prop_assert!(
                 s_prime.is_solution(&x_star, REF_EPSILON).unwrap(),
                 "x* 經 forward elimination 後不再是解\n a={a:?}\n x*={x_star:?}"
+            );
+        }
+
+        // RREF 版的招牌性質:無論形狀或秩,完整 pass 都落在 RREF(且維度不變)。
+        #[test]
+        fn reduced_row_echelon_form_produces_rref(m in any_real_matrix()) {
+            let rref = m.reduced_row_echelon_form(REF_EPSILON);
+            prop_assert!(
+                rref.is_reduced_row_echelon_form(REF_EPSILON),
+                "full pass 未產生 RREF\n m={m:?}\n rref={rref:?}"
+            );
+            prop_assert_eq!((rref.rows(), rref.cols()), (m.rows(), m.cols()), "維度應保持");
+        }
+
+        // backward pass 也只由 EROs 組成:化簡 [A|b] 到 RREF 仍保持解集。
+        #[test]
+        fn reduced_elimination_preserves_solution_set(
+            a in int_matrix(3, 3),
+            x_star in int_vector(3),
+        ) {
+            let b = a.multiply_vector(&x_star).unwrap();
+            let s = System::new(a.clone(), b).unwrap();
+
+            let reduced = s.to_augmented_matrix().reduced_row_echelon_form(REF_EPSILON);
+            let s_prime = System::from_augmented_matrix(reduced).unwrap();
+
+            prop_assert!(
+                s_prime.is_solution(&x_star, REF_EPSILON).unwrap(),
+                "x* 經 full elimination 後不再是解\n a={a:?}\n x*={x_star:?}"
+            );
+        }
+
+        // 整個 arc 的句點:RREF 唯一。兩個 row-equivalent 矩陣(一個是另一個跑隨機 ERO
+        // 序列得到)化簡到同一個 RREF —— sampling 等價實驗的精確、確定性版本。
+        #[test]
+        fn rref_is_canonical(m in int_matrix(3, 3), ops in prop::collection::vec(ero(3), 0..8)) {
+            // 兩條路徑捨入殘差略不同,容差比 REF_EPSILON 寬。
+            const CANONICAL_EPSILON: f64 = 1e-7;
+            let equivalent = apply_eros(m.clone(), &ops); // 與 m row-equivalent
+            let from_m = m.reduced_row_echelon_form(REF_EPSILON);
+            let from_equivalent = equivalent.reduced_row_echelon_form(REF_EPSILON);
+            prop_assert!(
+                from_m.approx_equals(&from_equivalent, CANONICAL_EPSILON),
+                "row-equivalent 矩陣的 RREF 不同\n m={m:?}\n RREF(m)={from_m:?}\n RREF(equiv)={from_equivalent:?}"
             );
         }
     }
