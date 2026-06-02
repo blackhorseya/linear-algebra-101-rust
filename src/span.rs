@@ -91,6 +91,21 @@ impl Span {
         }
     }
 
+    /// 哪些 generator 可以**移除而不縮小 span** —— 消去法判定出的自由行(free columns)。
+    /// 移除它們剩下 pivot 行:一組仍張出相同空間的極大獨立子集(這個 span 的一組基底)。
+    ///
+    /// 哪些 generator「可移除」**不唯一**(如 {e₀,e₁,e₀+e₁} 中任一個都是另兩個的組合),
+    /// 這回傳消去法做的**特定**選擇;但其長度恆等於冗餘數(= nullity)。空 span 回空 vec。
+    ///
+    /// (Go 的 `RemovableColumns` 同 package 直接碰 `Span` 的 private matrix 取 free columns;
+    /// Rust 跨模組沒有 friend access,所以在 `Span` 開這個 accessor 給 `independence` 用。)
+    pub fn free_columns(&self) -> Vec<usize> {
+        match &self.matrix {
+            None => vec![],
+            Some(a) => a.free_columns(self.epsilon),
+        }
+    }
+
     /// self 與 other 是否為**同一個** span(同一個子空間),不管它們各自用哪組生成向量
     /// 描述 —— span{e₀,e₁} 等於 span{(1,1,0),(1,-1,0)},因為兩者都是 xy 平面。
     ///

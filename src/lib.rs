@@ -6,6 +6,7 @@
 
 pub mod elimination;
 pub mod error;
+pub mod independence;
 pub mod matrix;
 pub mod predicate_set;
 pub mod span;
@@ -13,6 +14,9 @@ pub mod system;
 pub mod vector;
 
 pub use error::LinAlgError;
+pub use independence::{
+    is_linearly_dependent, is_linearly_independent, redundancy_count, removable_columns,
+};
 pub use matrix::Matrix;
 pub use predicate_set::PredicateSet;
 pub use span::{Span, affine_span, on_line, on_plane};
