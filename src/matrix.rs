@@ -162,6 +162,28 @@ impl Matrix {
         Ok(Vector::from_vec(data))
     }
 
+    /// 取出第 `j` 個 column 當作 column [`Vector`] ∈ Rʳᵒʷˢ。
+    ///
+    /// 這把 column view 從隱喻變成第一級操作。代數上,column 抽取就是恆等式
+    /// **`A·eⱼ = column(j)`** —— 用第 j 個標準基底向量乘 A,恰好選出第 j 個 column
+    /// (見 laws 測試 `multiply_by_standard_vector_equals_column`)。
+    ///
+    /// `j: usize` 讓負索引無法表示(編譯期擋下),唯一要把關的是越界:
+    /// `j >= cols()` → [`LinAlgError::IndexOutOfRange`](重用 `standard` 那個 variant)。
+    pub fn column(&self, j: usize) -> Result<Vector, LinAlgError> {
+        if j >= self.cols() {
+            Err(LinAlgError::IndexOutOfRange {
+                index: j,
+                len: self.cols(),
+            })
+        } else {
+            let data = (0..self.rows())
+                .map(|i| self.data[i][j])
+                .collect::<Vec<f64>>();
+            Ok(Vector::from_vec(data))
+        }
+    }
+
     /// 轉置:沿主對角線翻轉 —— `self` 的 `(i, j)` 變成結果的 `(j, i)`,
     /// `m×n` 矩陣因此變成 `n×m`。
     pub fn transpose(&self) -> Matrix {
@@ -435,6 +457,53 @@ mod tests {
             assert!(got.equals(want), "A·e{j} 應為第 {j} 個 column");
         }
     }
+
+    #[test]
+    fn multiply_vector_on_empty_matrix_returns_zero_vector() {
+        // row-view 的紅利:退化 2×0 矩陣乘 R⁰ 向量,結果維度由「列數」決定,
+        // 自然得 R² 零向量(Ok)。Go 的 column-view 在此會回 Err(沒有 column
+        // 可組合)—— 我們選 row-view 正是為了讓這個邊界天生正確。
+        let a = Matrix::new(2, 0); // 2×0
+        let v = Vector::new(0); // R⁰
+        let got = a
+            .multiply_vector(&v)
+            .expect("row view 對 m×0 應回零向量而非 Err");
+        assert_eq!(got.rows(), 2, "結果維度應為列數 2");
+        assert!(got.is_zero());
+    }
+
+    #[test]
+    fn column_extracts_jth_column() {
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3
+        assert!(
+            a.column(0)
+                .unwrap()
+                .equals(&Vector::from_vec(vec![1.0, 4.0]))
+        );
+        assert!(
+            a.column(1)
+                .unwrap()
+                .equals(&Vector::from_vec(vec![2.0, 5.0]))
+        );
+        assert!(
+            a.column(2)
+                .unwrap()
+                .equals(&Vector::from_vec(vec![3.0, 6.0]))
+        );
+        // 每個 column 落在 R^rows
+        assert_eq!(a.column(0).unwrap().rows(), 2, "column 應 ∈ R^rows");
+    }
+
+    #[test]
+    fn column_rejects_out_of_range_index() {
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3, cols=3
+        // j == cols 已越界(合法是 [0, 3))
+        assert_eq!(
+            a.column(3).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 3, len: 3 }
+        );
+        // 註:Go 還測「負索引」,但 j: usize 在 Rust 編譯期就排除,無需 runtime 測試。
+    }
 }
 
 /// 教材定理的 property test —— 用 proptest 驗證 Matrix 該滿足的代數律。
@@ -627,6 +696,19 @@ mod laws {
             let got = o.multiply_vector(&v).unwrap();
             prop_assert_eq!(got.rows(), o.rows(), "O·v 維度應為 O.rows()");
             prop_assert!(got.is_zero(), "O·v 應為零向量\n v={v:?}");
+        }
+
+        // A·eⱼ = column(j) —— column 抽取的代數恆等式:用第 j 個標準基底向量乘 A,
+        // 恰好選出第 j 個 column。這是 column view 的公式,也是「Ax 是 column 的
+        // 線性組合」字面成立的原因。用非方陣 2×3:eⱼ ∈ Rⁿ、column ∈ Rᵐ。整數值精確。
+        #[test]
+        fn multiply_by_standard_vector_equals_column(a in int_matrix(2, 3)) {
+            for j in 0..a.cols() {
+                let want = a.column(j).unwrap();
+                let e = Vector::standard(a.cols(), j).unwrap();
+                let got = a.multiply_vector(&e).unwrap();
+                prop_assert!(got.equals(&want), "A·e{j} != column({j})\n A={a:?}");
+            }
         }
 
         // ===== Stochastic 矩陣 —— 機率保持 =====
