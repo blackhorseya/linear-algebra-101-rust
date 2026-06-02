@@ -76,6 +76,36 @@ impl Matrix {
         self.data.iter().flatten().all(|&v| v == 0.0)
     }
 
+    /// 是否為 **(column-)stochastic** 矩陣:方陣、每個元素 ≥ 0、且**每一 column**
+    /// 和為 1(容差 `epsilon` 內)。這是 Markov chain 的轉移矩陣。
+    ///
+    /// 為何查 **column** 而非 row:本 crate 把向量建模成 column vector、用 `A·v`
+    /// 相乘 —— column-stochastic 的 P 會把任一機率向量(各分量 ≥ 0、總和 1)映成
+    /// 另一個機率向量,於是 `P·P·…·v` 就是在鏈上往前走。要檢查 row-stochastic,
+    /// 看它的轉置:`self.transpose().is_stochastic(epsilon)`。
+    ///
+    /// `epsilon` 吸收 column 和的浮點誤差(對應 [`approx_equals`](Matrix::approx_equals)),
+    /// 傳 `0.0` 即精確檢查。
+    pub fn is_stochastic(&self, epsilon: f64) -> bool {
+        if !self.is_square() {
+            return false;
+        }
+        for j in 0..self.cols() {
+            let mut sum = 0.0;
+            for i in 0..self.rows() {
+                let v = self.data[i][j];
+                if v < 0.0 {
+                    return false; // 機率不能為負
+                }
+                sum += v;
+            }
+            if (sum - 1.0).abs() > epsilon {
+                return false; // column 和不在容差內
+            }
+        }
+        true
+    }
+
     /// 逐元素相加,回傳新矩陣。
     ///
     /// 維度不合時回傳 `Err(LinAlgError::DimensionMismatch)` —— 把「這個運算可能
@@ -262,6 +292,44 @@ mod tests {
     }
 
     #[test]
+    fn is_stochastic_checks_columns_nonneg_and_sum_one() {
+        // 接受:I 的每個 column 都是某個 eⱼ(一個 1、其餘 0),非負且和為 1
+        assert!(Matrix::identity(3).is_stochastic(0.0));
+        // 接受:置換矩陣(I 的 column 重排)
+        assert!(matrix_from(vec![vec![0.0, 1.0], vec![1.0, 0.0]]).is_stochastic(0.0));
+        // 接受:均勻 1/2,精確和為 1
+        assert!(matrix_from(vec![vec![0.5, 0.5], vec![0.5, 0.5]]).is_stochastic(0.0));
+
+        // 容差:column 1 和為 1 + 1e-12,在 1e-9 內算過、精確檢查(eps=0)不過。
+        // (註:像 1/3 三次或 0.1+0.2+0.7 常在 f64 下恰好等於 1.0,故刻意造一個已知偏差)
+        let rounding = matrix_from(vec![vec![0.5, 0.5], vec![0.5, 0.5 + 1e-12]]);
+        assert!(rounding.is_stochastic(1e-9));
+        assert!(!rounding.is_stochastic(0.0));
+
+        // 拒絕:column 0 和為 1.2(機率質量過多)
+        assert!(!matrix_from(vec![vec![0.6, 0.5], vec![0.6, 0.5]]).is_stochastic(1e-9));
+        // 拒絕:column 0 和為 1 但含 -0.2(機率不能為負)
+        assert!(!matrix_from(vec![vec![1.2, 0.0], vec![-0.2, 1.0]]).is_stochastic(1e-9));
+        // 拒絕:非方陣永遠不是 stochastic
+        assert!(!matrix_from(vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]]).is_stochastic(0.0));
+    }
+
+    #[test]
+    fn is_stochastic_checks_columns_not_rows() {
+        // row/column 對偶:本 crate 查 COLUMN(配合 column vector 的 A·v)。
+        // 一個「每 ROW 和為 1」的矩陣,要轉置後才是 column-stochastic。
+        let row_stochastic = matrix_from(vec![vec![0.5, 0.5], vec![1.0, 0.0]]); // 每列和為 1
+        assert!(
+            !row_stochastic.is_stochastic(1e-9),
+            "row-stochastic 不該被當成 column-stochastic"
+        );
+        assert!(
+            row_stochastic.transpose().is_stochastic(1e-9),
+            "其轉置才是 column-stochastic"
+        );
+    }
+
+    #[test]
     fn add_sums_elementwise() {
         let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
         let b = matrix_from(vec![vec![5.0, 6.0], vec![7.0, 8.0]]);
@@ -407,6 +475,34 @@ mod laws {
             .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
     }
 
+    /// 機率單體(probability simplex)上的一點:n 個非負實數、總和為 1。
+    /// 由嚴格正的樣本正規化而得(下界 1e-6 確保總和不為 0、除法安全)。
+    fn simplex_point(n: usize) -> impl Strategy<Value = Vec<f64>> {
+        prop::collection::vec(1e-6f64..1.0, n).prop_map(|mut col| {
+            let sum: f64 = col.iter().sum();
+            for x in &mut col {
+                *x /= sum;
+            }
+            col
+        })
+    }
+
+    /// 產生 n×n 的 column-stochastic 矩陣:每個 column 都是單體上的一點。
+    /// 先產生各 column,再轉成 row-major(`data[i][j] = columns[j][i]`)。
+    fn stochastic_matrix(n: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(simplex_point(n), n).prop_map(move |columns| {
+            let data = (0..n)
+                .map(|i| (0..n).map(|j| columns[j][i]).collect())
+                .collect();
+            Matrix { data }
+        })
+    }
+
+    /// 機率向量:長度 n、各分量 ≥ 0、總和為 1(單體上的一點)。
+    fn probability_vector(n: usize) -> impl Strategy<Value = Vector> {
+        simplex_point(n).prop_map(Vector::from_vec)
+    }
+
     proptest! {
         // (a) A + B = B + A — 交換律(整數,精確)。【範本】
         #[test]
@@ -531,6 +627,31 @@ mod laws {
             let got = o.multiply_vector(&v).unwrap();
             prop_assert_eq!(got.rows(), o.rows(), "O·v 維度應為 O.rows()");
             prop_assert!(got.is_zero(), "O·v 應為零向量\n v={v:?}");
+        }
+
+        // ===== Stochastic 矩陣 —— 機率保持 =====
+        // 定義性質:column-stochastic 的 P 把機率向量映成機率向量(留在單體
+        // {x : xᵢ ≥ 0, Σxᵢ = 1} 上)。證明只用到「每個 column 和為 1」:
+        //   Σᵢ(Pv)ᵢ = Σᵢ Σⱼ Pᵢⱼ vⱼ = Σⱼ vⱼ(Σᵢ Pᵢⱼ) = Σⱼ vⱼ·1 = Σⱼ vⱼ = 1。
+        // 這正是本 crate 選 column-stochastic 而非 row-stochastic 的原因 ——
+        // 它才跟 column vector 的 A·v 相容。元素是正規化實數,故用容差比較。
+        #[test]
+        fn stochastic_preserves_probability(
+            p in stochastic_matrix(4),
+            v in probability_vector(4),
+        ) {
+            prop_assert!(p.is_stochastic(1e-9), "產生器應給出 stochastic 矩陣\n P={p:?}");
+
+            let pv = p.multiply_vector(&v).unwrap();
+
+            // 機率質量不會變負(非負數的乘積與和仍非負)
+            prop_assert!(
+                pv.entries().iter().all(|&x| x >= 0.0),
+                "Pv 出現負分量\n P={p:?}\n v={v:?}"
+            );
+            // 總機率質量守恆為 1
+            let sum: f64 = pv.entries().iter().sum();
+            prop_assert!((sum - 1.0).abs() <= 1e-9, "Σ(Pv) = {sum}, want 1\n P={p:?}\n v={v:?}");
         }
     }
 }
