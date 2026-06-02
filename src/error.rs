@@ -26,6 +26,13 @@ pub enum LinAlgError {
     /// `index` 與容器長度 `len` 一起帶上,呼叫端與訊息都能拿到具體數值,
     /// 對比 Go 那種「`fmt.Errorf` 格成字串就丟失結構」的做法。
     IndexOutOfRange { index: usize, len: usize },
+    /// 基本列運算試圖把某列乘以 0 —— 會抹掉整列、不可逆,因此不算 elementary。
+    /// (見 [`Matrix::scale_row`](crate::Matrix::scale_row)。)
+    ScaleByZero,
+    /// 基本列運算的兩個列索引必須相異,卻收到相同的列 —— 把一列折進自己會塌成
+    /// 純量縮放、在係數為 −1 時不可逆。(見
+    /// [`Matrix::add_scaled_row`](crate::Matrix::add_scaled_row)。)
+    SameRow,
 }
 
 impl fmt::Display for LinAlgError {
@@ -48,6 +55,15 @@ impl fmt::Display for LinAlgError {
             }
             LinAlgError::IndexOutOfRange { index, len } => {
                 write!(f, "index out of range: {index} is not in [0, {len})")
+            }
+            LinAlgError::ScaleByZero => {
+                write!(f, "scale by zero: row operation must be invertible")
+            }
+            LinAlgError::SameRow => {
+                write!(
+                    f,
+                    "rows must differ: add-scaled-row would not be invertible"
+                )
             }
         }
     }
@@ -94,6 +110,22 @@ mod tests {
         assert_eq!(
             LinAlgError::IndexOutOfRange { index: 3, len: 3 }.to_string(),
             "index out of range: 3 is not in [0, 3)"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_scale_by_zero() {
+        assert_eq!(
+            LinAlgError::ScaleByZero.to_string(),
+            "scale by zero: row operation must be invertible"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_same_row() {
+        assert_eq!(
+            LinAlgError::SameRow.to_string(),
+            "rows must differ: add-scaled-row would not be invertible"
         );
     }
 

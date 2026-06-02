@@ -202,12 +202,7 @@ impl Matrix {
     ///
     /// `i: usize` 讓負索引無法表示;`i >= rows()` → [`LinAlgError::IndexOutOfRange`]。
     pub fn row(&self, i: usize) -> Result<&[f64], LinAlgError> {
-        if i >= self.rows() {
-            return Err(LinAlgError::IndexOutOfRange {
-                index: i,
-                len: self.rows(),
-            });
-        }
+        self.check_row(i)?;
         Ok(&self.data[i])
     }
 
@@ -223,6 +218,70 @@ impl Matrix {
             })
             .collect::<Vec<Vec<f64>>>();
         Matrix { data }
+    }
+
+    /// 私有輔助:檢查列索引 `i` 是否在 `[0, rows())` 內。`row()` 與三個基本列運算
+    /// 共用它,讓「列索引越界 → IndexOutOfRange」只有單一真相。
+    fn check_row(&self, i: usize) -> Result<(), LinAlgError> {
+        if i >= self.rows() {
+            return Err(LinAlgError::IndexOutOfRange {
+                index: i,
+                len: self.rows(),
+            });
+        }
+        Ok(())
+    }
+
+    // 以下三個是 elementary row operations(EROs)—— 高斯消去法的原子步驟。每個都
+    // 「可逆」,這正是消去法能保持解集的原因:對 [A | b] 做一次 ERO,等價於左乘一個
+    // 可逆的 elementary matrix E,把 Ax = b 變成等價的 EAx = Eb。
+    //
+    // 設計上**刻意 `&mut self` 原地修改**(回 `Result<(), _>`),而非沿用本 crate
+    // 其他運算的「回新矩陣」慣例 —— 因為 ERO 是「就地化簡的一步」,接下來的消去法會
+    // 在一個 working 矩陣上連續施作,原地最自然也最省。驗證失敗時回 `Err` 且不動 self。
+
+    /// 交換第 `i` 列與第 `j` 列(Rᵢ ↔ Rⱼ),原地修改。`i == j` 是無害的 no-op。
+    ///
+    /// `i` 或 `j` 越界(`>= rows()`)→ [`LinAlgError::IndexOutOfRange`]。
+    pub fn swap_rows(&mut self, i: usize, j: usize) -> Result<(), LinAlgError> {
+        self.check_row(i)?;
+        self.check_row(j)?;
+        self.data.swap(i, j); // Vec::swap:i == j 自動 no-op
+        Ok(())
+    }
+
+    /// 把第 `i` 列乘以純量 `c`(Rᵢ → c·Rᵢ),原地修改。`c` 必須非零 —— 乘 0 會抹掉
+    /// 整列、不可逆,會改變方程組的解集。
+    ///
+    /// `i` 越界 → [`LinAlgError::IndexOutOfRange`];`c == 0.0` → [`LinAlgError::ScaleByZero`]。
+    pub fn scale_row(&mut self, i: usize, c: f64) -> Result<(), LinAlgError> {
+        self.check_row(i)?;
+        if c == 0.0 {
+            return Err(LinAlgError::ScaleByZero);
+        }
+        for v in &mut self.data[i] {
+            *v *= c;
+        }
+        Ok(())
+    }
+
+    /// 把 `c` 倍的第 `src` 列加到第 `dst` 列(R_dst → R_dst + c·R_src),原地修改。
+    /// 參數順序讀作賦值「R_dst += c·R_src」,目標在前。`dst` 與 `src` 必須相異 ——
+    /// 把一列折進自己會塌成純量縮放、在 `c == -1` 時不可逆。
+    ///
+    /// `dst` 或 `src` 越界 → [`LinAlgError::IndexOutOfRange`];`dst == src` → [`LinAlgError::SameRow`]。
+    pub fn add_scaled_row(&mut self, dst: usize, src: usize, c: f64) -> Result<(), LinAlgError> {
+        self.check_row(dst)?;
+        self.check_row(src)?;
+        if dst == src {
+            return Err(LinAlgError::SameRow);
+        }
+        // 借用眉角:同陣不能同時 mut 借 data[dst]、immut 借 data[src],先 clone src 列。
+        let src_row = self.data[src].clone();
+        for (d, s) in self.data[dst].iter_mut().zip(&src_row) {
+            *d += c * s;
+        }
+        Ok(())
     }
 
     /// 矩陣的列數(rows)—— 從 `data` 的外層長度導出。
@@ -550,6 +609,84 @@ mod tests {
             LinAlgError::IndexOutOfRange { index: 2, len: 2 }
         );
     }
+
+    #[test]
+    fn swap_rows_interchanges_two_rows() {
+        let mut m = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]);
+        m.swap_rows(0, 2).unwrap();
+        assert_eq!(m.data, vec![vec![5.0, 6.0], vec![3.0, 4.0], vec![1.0, 2.0]]);
+        // i == j 是無害的 no-op
+        let mut n = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        n.swap_rows(1, 1).unwrap();
+        assert_eq!(n.data, vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+    }
+
+    #[test]
+    fn swap_rows_rejects_out_of_range() {
+        let mut m = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]); // 2 列
+        assert_eq!(
+            m.swap_rows(2, 0).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 2, len: 2 }
+        );
+        assert_eq!(
+            m.swap_rows(0, 5).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 5, len: 2 }
+        );
+    }
+
+    #[test]
+    fn scale_row_multiplies_one_row() {
+        let mut m = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        m.scale_row(0, 2.0).unwrap();
+        assert_eq!(m.data, vec![vec![2.0, 4.0], vec![3.0, 4.0]]);
+    }
+
+    #[test]
+    fn scale_row_rejects_out_of_range_and_zero() {
+        let mut m = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert_eq!(
+            m.scale_row(2, 2.0).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 2, len: 2 }
+        );
+        // c == 0 抹掉列、不可逆 → 拒絕,且 m 不被改動
+        assert_eq!(m.scale_row(0, 0.0).unwrap_err(), LinAlgError::ScaleByZero);
+        assert_eq!(
+            m.data,
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            "驗證失敗不應改動矩陣"
+        );
+    }
+
+    #[test]
+    fn add_scaled_row_folds_one_row_into_another() {
+        // R0 += 2·R1 → [1+2·3, 1+2·4] = [7, 9];R1(src)不變
+        let mut m = matrix_from(vec![vec![1.0, 1.0], vec![3.0, 4.0]]);
+        m.add_scaled_row(0, 1, 2.0).unwrap();
+        assert_eq!(m.data, vec![vec![7.0, 9.0], vec![3.0, 4.0]]);
+    }
+
+    #[test]
+    fn add_scaled_row_rejects_out_of_range_and_same_row() {
+        let mut m = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert_eq!(
+            m.add_scaled_row(2, 0, 1.0).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 2, len: 2 }
+        );
+        assert_eq!(
+            m.add_scaled_row(0, 2, 1.0).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 2, len: 2 }
+        );
+        // dst == src 折進自己 → 不可逆 → 拒絕,且 m 不被改動
+        assert_eq!(
+            m.add_scaled_row(1, 1, 1.0).unwrap_err(),
+            LinAlgError::SameRow
+        );
+        assert_eq!(
+            m.data,
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            "驗證失敗不應改動矩陣"
+        );
+    }
 }
 
 /// 教材定理的 property test —— 用 proptest 驗證 Matrix 該滿足的代數律。
@@ -867,6 +1004,42 @@ mod laws {
             // 總機率質量守恆為 1
             let sum: f64 = pv.entries().iter().sum();
             prop_assert!((sum - 1.0).abs() <= 1e-9, "Σ(Pv) = {sum}, want 1\n P={p:?}\n v={v:?}");
+        }
+
+        // ===== Elementary row operations 的可逆性 =====
+        // 每個 ERO 都可逆 —— 這是消去法能保持解集的根本。直接驗:做完再「反做」,回原狀。
+
+        // swap 是自身的反操作(involution):同一對列交換兩次 = 原狀。整數精確。
+        #[test]
+        fn swap_rows_is_involution(a in int_matrix(4, 3), i in 0usize..4, j in 0usize..4) {
+            let mut m = a.clone();
+            m.swap_rows(i, j).unwrap();
+            m.swap_rows(i, j).unwrap();
+            prop_assert!(m.equals(&a), "swap(i,j) 兩次應回原狀\n A={a:?} i={i} j={j}");
+        }
+
+        // scale 的反操作是乘 1/c。c 取 [1,10) 遠離 0,1/c well-conditioned;實數 → approx。
+        #[test]
+        fn scale_row_inverse_is_reciprocal(a in int_matrix(4, 3), i in 0usize..4, c in 1.0f64..10.0) {
+            let mut m = a.clone();
+            m.scale_row(i, c).unwrap();
+            m.scale_row(i, 1.0 / c).unwrap();
+            prop_assert!(m.approx_equals(&a, 1e-9), "scale(c) 再 scale(1/c) 應回原狀\n A={a:?} c={c}");
+        }
+
+        // add-scaled 的反操作是加 -c。dst、src 須相異(prop_assume 跳過相等案例);實數 → approx。
+        #[test]
+        fn add_scaled_row_inverse_is_negation(
+            a in int_matrix(4, 3),
+            dst in 0usize..4,
+            src in 0usize..4,
+            c in -10.0f64..10.0,
+        ) {
+            prop_assume!(dst != src);
+            let mut m = a.clone();
+            m.add_scaled_row(dst, src, c).unwrap();
+            m.add_scaled_row(dst, src, -c).unwrap();
+            prop_assert!(m.approx_equals(&a, 1e-9), "add(c) 再 add(-c) 應回原狀\n A={a:?} dst={dst} src={src} c={c}");
         }
     }
 }
