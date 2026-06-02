@@ -21,6 +21,11 @@ pub enum LinAlgError {
     /// 運算需要至少一個輸入,卻收到空集合(例:對空向量集合做線性組合,
     /// 無從決定結果維度)。
     EmptyInput,
+    /// 索引超出合法範圍 `[0, len)`(例:取第 `index` 個標準基底向量,
+    /// 但 `index >= len`)。這是首個**帶資料**的 variant —— 把出錯的
+    /// `index` 與容器長度 `len` 一起帶上,呼叫端與訊息都能拿到具體數值,
+    /// 對比 Go 那種「`fmt.Errorf` 格成字串就丟失結構」的做法。
+    IndexOutOfRange { index: usize, len: usize },
 }
 
 impl fmt::Display for LinAlgError {
@@ -40,6 +45,9 @@ impl fmt::Display for LinAlgError {
             }
             LinAlgError::EmptyInput => {
                 write!(f, "empty input: operation requires at least one vector")
+            }
+            LinAlgError::IndexOutOfRange { index, len } => {
+                write!(f, "index out of range: {index} is not in [0, {len})")
             }
         }
     }
@@ -76,6 +84,16 @@ mod tests {
         assert_eq!(
             LinAlgError::EmptyInput.to_string(),
             "empty input: operation requires at least one vector"
+        );
+    }
+
+    /// 帶資料的 variant:除了鎖定措辭,也驗證 `index`/`len` 真的被插進訊息 ——
+    /// 這正是選它(而非 unit variant)的理由,訊息要看得到具體數值。
+    #[test]
+    fn display_interpolates_index_out_of_range() {
+        assert_eq!(
+            LinAlgError::IndexOutOfRange { index: 3, len: 3 }.to_string(),
+            "index out of range: 3 is not in [0, 3)"
         );
     }
 

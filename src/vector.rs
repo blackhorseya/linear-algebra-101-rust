@@ -22,6 +22,30 @@ impl Vector {
         }
     }
 
+    /// 第 `i` 個標準基底向量 **eᵢ** ∈ Rʳᵒʷˢ:長度 `rows`,只有第 `i` 格是 1、
+    /// 其餘為 0。它是 rows×rows 單位矩陣的第 `i` 行,也是「每個向量都是基底向量
+    /// 的線性組合」這句話裡的那組基底 —— 純量就是各 eᵢ 的座標
+    /// (見 [`linear_combination`](Vector::linear_combination))。
+    ///
+    /// `i` 型別是 `usize`,所以**負索引在 Rust 無法表示**(`standard(3, -1)` 編譯
+    /// 不過),不像 Go 還要 runtime 檢查 `i < 0`;唯一要把關的是越界:
+    /// `i >= rows` → [`LinAlgError::IndexOutOfRange`]。
+    pub fn standard(rows: usize, i: usize) -> Result<Vector, LinAlgError> {
+        // 1. 越界(i >= rows)→ Err(LinAlgError::IndexOutOfRange { index: i, len: rows })
+        // 2. 否則:用 Vector::new(rows) 取零向量,把第 i 格設成 1.0,Ok(它)
+        //    (在 impl 內部可直接碰 private 的 data 欄位;設值需要 `let mut`)
+        if i >= rows {
+            Err(LinAlgError::IndexOutOfRange {
+                index: i,
+                len: rows,
+            })
+        } else {
+            let mut v = Vector::new(rows);
+            v.data[i] = 1.0;
+            Ok(v)
+        }
+    }
+
     /// 逐元素相加,回傳新向量。
     ///
     /// 長度不符時回傳 `Err(LinAlgError::DimensionMismatch)` —— 與 `Matrix::add`
@@ -175,6 +199,42 @@ mod tests {
         assert_eq!(v.scale(2.0).data, vec![2.0, 4.0, 6.0]);
         assert_eq!(v.scale(0.0).data, vec![0.0, 0.0, 0.0]);
         assert_eq!(v.scale(-1.0).data, vec![-1.0, -2.0, -3.0]);
+    }
+
+    #[test]
+    fn standard_builds_unit_vectors() {
+        // e₀ in R³、e₂ in R³、e₀ in R¹ —— 只有第 i 格為 1,其餘為 0
+        assert_eq!(Vector::standard(3, 0).unwrap().data, vec![1.0, 0.0, 0.0]);
+        assert_eq!(Vector::standard(3, 2).unwrap().data, vec![0.0, 0.0, 1.0]);
+        assert_eq!(Vector::standard(1, 0).unwrap().data, vec![1.0]);
+    }
+
+    #[test]
+    fn standard_rejects_out_of_range_index() {
+        // 合法索引是 [0, rows),所以 i == rows 已越界
+        assert_eq!(
+            Vector::standard(3, 3).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 3, len: 3 }
+        );
+        // 遠超範圍,len 仍如實回報為 3
+        assert_eq!(
+            Vector::standard(3, 99).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 99, len: 3 }
+        );
+        // 註:Go 還測了「負索引」,但 Rust 的 `i: usize` 讓負值無法表示,
+        // 該 case 在編譯期就被擋掉,不需要(也無法)寫成 runtime 測試。
+    }
+
+    #[test]
+    fn standard_basis_reconstructs_coordinates() {
+        // 標準基底之所以是「基底」的定義性質:以座標當權重對 eᵢ 做線性組合,
+        // 會精確還原出帶那組座標的向量。 Σ coordsᵢ · eᵢ == [coords]
+        let coords = [2.0, 3.0, 5.0];
+        let basis: Vec<Vector> = (0..coords.len())
+            .map(|i| Vector::standard(coords.len(), i).unwrap())
+            .collect();
+        let reconstructed = Vector::linear_combination(&coords, &basis).unwrap();
+        assert_eq!(reconstructed.data, vec![2.0, 3.0, 5.0]);
     }
 
     #[test]
