@@ -51,3 +51,85 @@ impl System {
         Matrix::from_rows(augmented_rows)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_accepts_matching_dimensions() {
+        // 方陣 2×2:兩式、兩未知數
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
+            Vector::from_vec(vec![5.0, 6.0]),
+        )
+        .expect("A 列數與 b 長度相符應成立");
+        assert!(
+            sys.A
+                .equals(&Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]))
+        );
+        assert!(sys.b.equals(&Vector::from_vec(vec![5.0, 6.0])));
+
+        // 長方(超定):3 式、2 未知數 —— 未知數個數不必等於方程式個數,
+        // 只要 A 的列數 == b 長度
+        let over = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]),
+            Vector::from_vec(vec![7.0, 8.0, 9.0]),
+        );
+        assert!(over.is_ok(), "超定系統(3 列、b 長 3)應成立");
+    }
+
+    #[test]
+    fn new_rejects_dimension_mismatch() {
+        // 2 式,但 b 有 3 格:第三個常數沒有方程式可歸屬
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
+            Vector::from_vec(vec![5.0, 6.0, 7.0]),
+        );
+        assert_eq!(sys.unwrap_err(), LinAlgError::DimensionMismatch);
+    }
+
+    #[test]
+    fn to_augmented_matrix_appends_constants_column() {
+        // 方陣:尾端多一行常數 → 形狀 rows×(cols+1)
+        let sys = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
+            Vector::from_vec(vec![5.0, 6.0]),
+        )
+        .unwrap();
+        let aug = sys.to_augmented_matrix();
+        assert_eq!(
+            (aug.rows(), aug.cols()),
+            (2, 3),
+            "增廣矩陣形狀應為 rows×(cols+1)"
+        );
+        assert!(aug.equals(&Matrix::from_rows(vec![
+            vec![1.0, 2.0, 5.0],
+            vec![3.0, 4.0, 6.0],
+        ])));
+
+        // 長方:保留多出來的列
+        let rect = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]),
+            Vector::from_vec(vec![7.0, 8.0, 9.0]),
+        )
+        .unwrap();
+        assert!(rect.to_augmented_matrix().equals(&Matrix::from_rows(vec![
+            vec![1.0, 2.0, 7.0],
+            vec![3.0, 4.0, 8.0],
+            vec![5.0, 6.0, 9.0],
+        ])));
+
+        // 單一方程式 2x + 3y = 4 → 一列增廣矩陣 [2 3 | 4]
+        let single = System::new(
+            Matrix::from_rows(vec![vec![2.0, 3.0]]),
+            Vector::from_vec(vec![4.0]),
+        )
+        .unwrap();
+        assert!(
+            single
+                .to_augmented_matrix()
+                .equals(&Matrix::from_rows(vec![vec![2.0, 3.0, 4.0]]))
+        );
+    }
+}
