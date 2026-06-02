@@ -284,6 +284,60 @@ impl Matrix {
         Ok(())
     }
 
+    /// 私有輔助:回第 `i` 列的 **pivot(leading entry)** 所在 column —— 由左數來第一個
+    /// 量值超過 `epsilon` 的位置;全零列(在 `epsilon` 內)回 `None`。
+    ///
+    /// `Iterator::position` 天生回 `Option<usize>`,正好把 Go 用 `-1` 哨兵代表「無 pivot」
+    /// 換成型別安全的「沒有就是 `None`」—— 呼叫端不可能拿它去當 index。私有助手,只由下面
+    /// 的 echelon 述詞以合法的 `i` 呼叫,故不另做越界檢查。
+    fn pivot_col(&self, i: usize, epsilon: f64) -> Option<usize> {
+        self.data[i].iter().position(|&v| v.abs() > epsilon)
+    }
+
+    /// 是否為 **row echelon form(REF,列階梯形)**:每個全零列都在所有非零列之下,
+    /// 且每個 pivot 都嚴格在上一列 pivot 的右邊(階梯)。pivot **不必**為 1
+    /// (Lay/Strang 慣例)。量值在 `epsilon` 內算零(傳 `0.0` 即精確)。
+    pub fn is_row_echelon_form(&self, epsilon: f64) -> bool {
+        let mut next_pivot_min = 0; // 下一個 pivot 至少要落在此 column
+        let mut seen_zero_row = false; // 看過全零列後,後面不准再出現非零列
+        for i in 0..self.rows() {
+            let Some(pivot) = self.pivot_col(i, epsilon) else {
+                seen_zero_row = true;
+                continue;
+            };
+            if seen_zero_row || pivot < next_pivot_min {
+                return false;
+            }
+            next_pivot_min = pivot + 1; // 逼下一個 pivot 嚴格右移
+        }
+        true
+    }
+
+    /// 是否為 **reduced row echelon form(RREF,簡化列階梯形)**:在 REF 之上,再要求每個
+    /// pivot 等於 1、且 pivot 是它所在 column 唯一的非零元素。內部先呼叫
+    /// [`is_row_echelon_form`](Matrix::is_row_echelon_form) —— 故 **RREF ⟹ REF 是結構性
+    /// 保證**。量值在 `epsilon` 內算零。
+    pub fn is_reduced_row_echelon_form(&self, epsilon: f64) -> bool {
+        if !self.is_row_echelon_form(epsilon) {
+            return false;
+        }
+        for i in 0..self.rows() {
+            let Some(p) = self.pivot_col(i, epsilon) else {
+                continue; // 零列無附加條件,跳過
+            };
+            if (self.data[i][p] - 1.0).abs() > epsilon {
+                return false; // pivot 必須是 1
+            }
+            // pivot 必須獨佔該 column:其他每一列在 column p 都要是零
+            let pivot_is_alone =
+                (0..self.rows()).all(|r| r == i || self.data[r][p].abs() <= epsilon);
+            if !pivot_is_alone {
+                return false;
+            }
+        }
+        true
+    }
+
     /// 矩陣的列數(rows)—— 從 `data` 的外層長度導出。
     pub fn rows(&self) -> usize {
         self.data.len()
@@ -686,6 +740,96 @@ mod tests {
             vec![vec![1.0, 2.0], vec![3.0, 4.0]],
             "驗證失敗不應改動矩陣"
         );
+    }
+
+    #[test]
+    fn is_row_echelon_form_accepts_staircases() {
+        // 上三角、pivot 遞降
+        assert!(
+            matrix_from(vec![
+                vec![2.0, 1.0, 3.0],
+                vec![0.0, 5.0, 4.0],
+                vec![0.0, 0.0, 0.0],
+            ])
+            .is_row_echelon_form(0.0)
+        );
+        // 階梯可跳行:第 1 列 pivot 直接落在 column 2
+        assert!(
+            matrix_from(vec![
+                vec![1.0, 2.0, 3.0],
+                vec![0.0, 0.0, 4.0],
+                vec![0.0, 0.0, 0.0],
+            ])
+            .is_row_echelon_form(0.0)
+        );
+        // 單位矩陣是 REF
+        assert!(Matrix::identity(3).is_row_echelon_form(0.0));
+        // 全零矩陣 vacuously 成立
+        assert!(Matrix::new(2, 3).is_row_echelon_form(0.0));
+    }
+
+    #[test]
+    fn is_row_echelon_form_rejects_violations() {
+        // 兩個 pivot 在同一 column:階梯沒前進
+        assert!(!matrix_from(vec![vec![1.0, 2.0], vec![1.0, 3.0]]).is_row_echelon_form(0.0));
+        // 第 1 列 pivot 在第 0 列 pivot 的左邊:階梯倒退
+        assert!(!matrix_from(vec![vec![0.0, 1.0], vec![1.0, 0.0]]).is_row_echelon_form(0.0));
+        // 非零列出現在全零列之下
+        assert!(
+            !matrix_from(vec![vec![1.0, 2.0], vec![0.0, 0.0], vec![0.0, 3.0]])
+                .is_row_echelon_form(0.0)
+        );
+    }
+
+    #[test]
+    fn is_row_echelon_form_judges_zero_within_epsilon() {
+        // 次對角的 1e-12:1e-9 容差內算零 → 第 1 列 pivot 在 column 1,合法階梯
+        let m = matrix_from(vec![vec![1.0, 2.0], vec![1e-12, 3.0]]);
+        assert!(m.is_row_echelon_form(1e-9));
+        // 精確檢查下 1e-12 是 column 0 的真 pivot,與第 0 列相撞 → 非 REF
+        assert!(!m.is_row_echelon_form(0.0));
+    }
+
+    #[test]
+    fn is_reduced_row_echelon_form_accepts_valid() {
+        // 單位矩陣是 RREF
+        assert!(Matrix::identity(3).is_reduced_row_echelon_form(0.0));
+        // leading 1 + 一個自由 column(column 2)
+        assert!(
+            matrix_from(vec![
+                vec![1.0, 0.0, 3.0],
+                vec![0.0, 1.0, 4.0],
+                vec![0.0, 0.0, 0.0],
+            ])
+            .is_reduced_row_echelon_form(0.0)
+        );
+        // 全零矩陣
+        assert!(Matrix::new(2, 2).is_reduced_row_echelon_form(0.0));
+    }
+
+    #[test]
+    fn is_reduced_row_echelon_form_rejects_violations() {
+        // 在 REF(pivot 遞降)但第一個 pivot 是 2 不是 1
+        assert!(
+            !matrix_from(vec![vec![2.0, 0.0], vec![0.0, 1.0]]).is_reduced_row_echelon_form(0.0)
+        );
+        // pivot 都是 1、階梯合法,但 column 1 的 pivot 上方有非零(3)→ pivot 沒獨佔該 column
+        assert!(
+            !matrix_from(vec![vec![1.0, 3.0], vec![0.0, 1.0]]).is_reduced_row_echelon_form(0.0)
+        );
+        // 連 REF 都不是(pivot 相撞)→ 不可能是 RREF
+        assert!(
+            !matrix_from(vec![vec![1.0, 2.0], vec![1.0, 3.0]]).is_reduced_row_echelon_form(0.0)
+        );
+    }
+
+    #[test]
+    fn is_reduced_row_echelon_form_judges_zero_within_epsilon() {
+        // pivot 上方的 1e-12:1e-9 容差內算零 → pivot 獨佔 column → RREF
+        let m = matrix_from(vec![vec![1.0, 1e-12], vec![0.0, 1.0]]);
+        assert!(m.is_reduced_row_echelon_form(1e-9));
+        // 精確檢查下 1e-12 是 column 1 的真非零 → pivot 沒獨佔 → 非 RREF
+        assert!(!m.is_reduced_row_echelon_form(0.0));
     }
 }
 
