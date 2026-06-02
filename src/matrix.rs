@@ -24,6 +24,18 @@ impl Matrix {
         }
     }
 
+    /// 直接用 row-major 的資料建出矩陣 —— 「給我這些列」的公開值建構子。
+    ///
+    /// 在此之前公開能建的矩陣只有零矩陣([`new`](Matrix::new))與單位矩陣
+    /// ([`identity`](Matrix::identity)),缺一個從給定值建構的入口(對應測試裡的
+    /// 白箱 `matrix_from`)。`System::to_augmented_matrix` 等跨模組組裝也需要它。
+    ///
+    /// 維度沿用導出表示法:`rows()` = 列數、`cols()` = 第一列長度。各列應等長,
+    /// 此建構子不另做檢查(與 `matrix_from` 一致),由呼叫端負責給規則的資料。
+    pub fn from_rows(data: Vec<Vec<f64>>) -> Matrix {
+        Matrix { data }
+    }
+
     /// n×n 單位矩陣 **Iₙ**:主對角線為 1、其餘為 0。它是矩陣乘法的單位元 ——
     /// 對任意向量 `I·x = x`(等有了 matrix×matrix,還有 `I·A = A·I = A`)。
     ///
@@ -182,6 +194,21 @@ impl Matrix {
                 .collect::<Vec<f64>>();
             Ok(Vector::from_vec(data))
         }
+    }
+
+    /// 唯讀借出第 `i` 列(`&[f64]`)。與 [`column`](Matrix::column) 對稱,但回傳的是
+    /// 原始 slice 而非 `Vector` —— 本 crate 的 `Vector` 是 *column* vector,一個 row
+    /// 並不是 column vector,硬包成 `Vector` 反而失真。
+    ///
+    /// `i: usize` 讓負索引無法表示;`i >= rows()` → [`LinAlgError::IndexOutOfRange`]。
+    pub fn row(&self, i: usize) -> Result<&[f64], LinAlgError> {
+        if i >= self.rows() {
+            return Err(LinAlgError::IndexOutOfRange {
+                index: i,
+                len: self.rows(),
+            });
+        }
+        Ok(&self.data[i])
     }
 
     /// 轉置:沿主對角線翻轉 —— `self` 的 `(i, j)` 變成結果的 `(j, i)`,
@@ -503,6 +530,25 @@ mod tests {
             LinAlgError::IndexOutOfRange { index: 3, len: 3 }
         );
         // 註:Go 還測「負索引」,但 j: usize 在 Rust 編譯期就排除,無需 runtime 測試。
+    }
+
+    #[test]
+    fn from_rows_builds_from_row_major_values() {
+        let m = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!((m.rows(), m.cols()), (2, 3));
+        assert_eq!(m.data, vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+    }
+
+    #[test]
+    fn row_borrows_ith_row() {
+        let m = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3
+        assert_eq!(m.row(0).unwrap(), &[1.0, 2.0, 3.0]);
+        assert_eq!(m.row(1).unwrap(), &[4.0, 5.0, 6.0]);
+        // i == rows 已越界(合法是 [0, 2))
+        assert_eq!(
+            m.row(2).unwrap_err(),
+            LinAlgError::IndexOutOfRange { index: 2, len: 2 }
+        );
     }
 }
 
