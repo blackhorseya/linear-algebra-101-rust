@@ -108,6 +108,28 @@ impl Span {
             && other.generators.iter().all(|g| self.contains(g))
     }
 
+    /// Theorem 1.6 的條件 (a)+(c) 併成一句:這個 span 是不是**填滿整個** ℝ^ambient_dim?
+    /// 當且僅當它的獨立方向數(= [`dimension`](Span::dimension) = `rank(A)`)等於環境空間
+    /// 的軸數時成立;少一個方向,就有某個方向永遠碰不到。
+    ///
+    /// **易錯點**:`ambient_dim` 比的是 A 的**列數 m**(目標空間 ℝᵐ 的軸數),不是行數 n
+    /// —— Theorem 1.6 的 (c) 是 full **ROW** rank。高瘦矩陣(m > n)的行再多也張不滿 ℝᵐ。
+    pub fn spans_all(&self, ambient_dim: usize) -> bool {
+        // 換你寫:一行。span 填滿 ℝ^ambient_dim ⟺ 它的獨立方向數(`self.dimension()`)
+        // 恰好等於環境維度。關鍵:跟 `ambient_dim`(= A 的**列數** m)比,而不是行數 ——
+        // 對照上方 doc 的「易錯點」。
+        self.dimension() == ambient_dim
+    }
+
+    /// 從矩陣 A 的**各行**建出 span,即 column space Col(A) —— Theorem 1.6 的主角:A 的行
+    /// 張滿 ℝᵐ ⟺ 這個 span 填滿整個空間([`spans_all`](Span::spans_all)`(m)`,m 是 A 列數)。
+    pub fn from_columns(epsilon: f64, a: &Matrix) -> Span {
+        let columns: Vec<Vector> = (0..a.cols())
+            .map(|j| a.column(j).expect("j 必落在 [0, cols) 內,不可能越界"))
+            .collect();
+        Span::new(epsilon, columns)
+    }
+
     /// 把 span 暴露成 [`PredicateSet<Vector>`](crate::PredicateSet),讓布林集合代數
     /// (Union / Intersection / Complement / …)也能套用到 span 上。述詞就是成員規則
     /// [`contains`](Span::contains) 本身。
@@ -438,5 +460,113 @@ mod tests {
             union.contains(&off_line_pt),
             "(0,5,0) 在平面內,必在 line ∪ plane 裡"
         );
+    }
+
+    #[test]
+    fn spans_all_known_cases() {
+        // 手算的對照案例,獨立於隨機 law test —— 萬一共用的 rank 機制有 bug,
+        // 它就無法躲在「條件一致但全錯」的後面。
+        // 2×2 單位矩陣:行 e₀、e₁ 張滿 ℝ²,rank 2 = m。
+        assert!(
+            Span::from_columns(SPAN_EPS, &Matrix::identity(2)).spans_all(2),
+            "單位矩陣張滿自己的空間"
+        );
+        // 寬 2×3、內嵌單位:rank 2 = m,onto ℝ²。
+        let wide = Matrix::from_rows(vec![vec![1.0, 0.0, 5.0], vec![0.0, 1.0, 7.0]]);
+        assert!(
+            Span::from_columns(SPAN_EPS, &wide).spans_all(2),
+            "寬矩陣 full row rank 即 onto"
+        );
+        // 高 3×2:至多 rank 2 < 3 列,行永遠填不滿 ℝ³ —— onto 要的是 row full rank(m)。
+        let tall = Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.0, 0.0]]);
+        assert!(
+            !Span::from_columns(SPAN_EPS, &tall).spans_all(3),
+            "高矩陣不可能 onto(列數 > 行數,方向不夠)"
+        );
+        // 2×2 有相依行:rank 1 < 2,span 只是 ℝ² 裡一條線。
+        let deficient = Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]);
+        assert!(
+            !Span::from_columns(SPAN_EPS, &deficient).spans_all(2),
+            "rank 不足即非 onto"
+        );
+    }
+}
+
+/// Theorem 1.6 化為可執行斷言。對 m×n 矩陣 A,五句**等價**:(a) A 的行張滿 ℝᵐ、
+/// (b) Ax=b 對**每個** b ∈ ℝᵐ 相容、(c) rank(A)=m(**列**數)、(d) A 的 RREF 無零列、
+/// (e) 每列都有 pivot。這是「onto / 滿射」定理 —— Theorem 1.5 單一 b 相容性的「對每個 b」
+/// 強化版;rank 比的是 m(列),不是 n(行),(c) 是 full **ROW** rank。
+///
+/// (a)(c)(d)(e) 皆可直接計算,跨隨機形狀的 A 必須給出相同判定;(b) 對所有 b 量化、無法
+/// 列舉,只在定理保證的方向(onto ⟹ 每個 b 相容)以探針驗證 —— 反向不探(隨機 b 落在真
+/// 子空間的機率為零,探了只是「幾乎必然」,非證明,同 [`PredicateSet`] 的 probe≠proof)。
+#[cfg(test)]
+mod laws {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// 產生 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下精確)。
+    fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
+            Matrix::from_rows(
+                grid.into_iter()
+                    .map(|row| row.into_iter().map(|v| v as f64).collect())
+                    .collect(),
+            )
+        })
+    }
+
+    /// 產生長度 `n`、元素為 [-10, 10] 整數的向量。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 條件 (d):A 的 RREF 沒有零列;等價於 (e) 每列都帶一個 pivot。`pivot_col` 對零列回
+    /// `None`,所以「每列有 pivot」就是「沒有任一列的 `pivot_col` 是 `None`」。
+    fn rref_has_no_zero_row(a: &Matrix, eps: f64) -> bool {
+        // 換你寫:先把 a 化成 RREF(`a.reduced_row_echelon_form(eps)`),再檢查**每一列**
+        // 都有 pivot。`rref.pivot_col(i, eps)` 對零列回 `None`,所以條件就是
+        // 「(0..rref.rows()) 每個 i 都讓 pivot_col(i).is_some()」。
+        let rref = a.reduced_row_echelon_form(eps);
+        (0..rref.rows()).all(|i| rref.pivot_col(i, eps).is_some())
+    }
+
+    proptest! {
+        /// (a)、(c)、(d)/(e) 四個可計算條件在每種形狀的隨機 A 上必須給出**同一**判定。
+        #[test]
+        fn theorem_1_6_conditions_agree(
+            a in (1usize..=5, 1usize..=5).prop_flat_map(|(r, c)| int_matrix(r, c)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let rows = a.rows();
+            let cond_a = Span::from_columns(EPS, &a).spans_all(rows); // (a)
+            let cond_c = a.rank(EPS) == rows; // (c)
+            let cond_de = rref_has_no_zero_row(&a, EPS); // (d)/(e)
+            prop_assert!(
+                cond_a == cond_c && cond_c == cond_de,
+                "Theorem 1.6 判準不一致: (a)={cond_a} (c)={cond_c} (d/e)={cond_de}\n a={a:?}"
+            );
+        }
+
+        /// (b) 在定理保證的方向:當 (a) 成立(A 的行張滿 ℝᵐ),隨機 b 必**全部**相容。用整數
+        /// 方陣 + `prop_assume` 篩出 onto 的 A —— 整數方陣幾乎都 full rank,故 onto 分支幾乎
+        /// 必被測到(不像 Go 需顯式 checked 計數防 vacuous pass)。
+        #[test]
+        fn onto_means_every_b_consistent(
+            (a, bs) in (1usize..=4)
+                .prop_flat_map(|n| (int_matrix(n, n), prop::collection::vec(int_vector(n), 1..=6))),
+        ) {
+            const EPS: f64 = 1e-9;
+            let n = a.rows();
+            prop_assume!(Span::from_columns(EPS, &a).spans_all(n)); // 只約束 onto 的 A
+            for b in bs {
+                let system = System::new(a.clone(), b.clone()).unwrap();
+                prop_assert!(
+                    system.is_consistent(EPS),
+                    "(a) 成立但 Ax=b 不相容\n a={a:?}\n b={b:?}"
+                );
+            }
+        }
     }
 }
