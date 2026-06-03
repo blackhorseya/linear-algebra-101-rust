@@ -9,41 +9,41 @@
 ## 為什麼用 Rust 學線性代數?
 
 - **型別逼你想清楚結構** — `Vector` 與 `Matrix` 是不同型別,維度不合的運算應該在邊界就被擋下來,而不是算到一半才爆。
-- **函式即定義** — `dot(a, b)` 的實作就是 dot product 的數學定義,寫出來就懂了。
+- **函式即定義** — `linear_combination(scalars, vectors)` 的實作就是「Σ 純量ᵢ · 向量ᵢ」的數學定義,寫出來就懂了。
 - **錯誤是值,不是例外** — 維度不合回傳 `Result<_, _>` 而非 panic,呼叫端被型別系統逼著面對「這個運算可能無效」這件事 — 這正是線性代數裡維度條件的精神。
 - **測試即證明** — 每個運算都能用已知結果(例如 identity matrix 乘任何 matrix 等於自己)寫成 test,把數學性質變成可驗證的程式;搭配 [`proptest`](https://docs.rs/proptest) 還能把定律變成隨機驗證。
 
 ## 學習路徑
 
-由淺入深,後面的概念建立在前面的之上:
+`[x]` 已實作(含測試),`[ ]` 尚未動工。本專案嚴格依 [Go 版](https://github.com/blackhorseya/linear-algebra-101) git log 正序逐 commit 移植,進度貼合教材(Lay/Strang 風格,程式碼註解標 Theorem 1.x)—— 所以「向量空間 / 線性獨立」會排在「內積 / 範數」前面,而非直覺順序。
 
 ### 1. Vector(向量)
-- [ ] 加法 / 減法 `add`, `sub`
-- [ ] 純量乘法 `scale`
-- [ ] 內積 dot product `dot`
-- [ ] 長度 / 範數 `norm`(L2)
-- [ ] 單位向量 `normalize`
-- [ ] 向量夾角 `angle`(由 dot product 推導)
+- [x] 加法 `add`、純量乘法 `scale`
+- [x] 線性組合 `linear_combination`、標準基底 eᵢ `standard`
+- [x] 相等 / 近似相等 `equals` / `approx_equals`、零向量 `is_zero`、平行(共線)`is_parallel`
+- [ ] 減法 `sub`、內積 `dot`、長度 / 範數 `norm`、單位向量 `normalize`、夾角 `angle`
 
 ### 2. Matrix(矩陣)
-- [ ] 表示法與建構子(維度驗證)
-- [ ] 加法 / 純量乘法
-- [ ] 轉置 `transpose`
-- [ ] 矩陣乘法 `mul`(row × column 的 dot product)
-- [ ] 單位矩陣 `identity`
+- [x] 建構子 `new` / `from_rows`、加法 / 純量乘法、轉置 `transpose`、單位矩陣 `identity`
+- [x] 矩陣–向量乘積 `multiply_vector`(A·v,column view 的核心)、column / row 抽取、stochastic 判定 `is_stochastic`
+- [x] 基本列運算 EROs(`swap_rows` / `scale_row` / `add_scaled_row`)、列階梯形判定 `is_row_echelon_form` / `is_reduced_row_echelon_form`
+- [ ] 矩陣乘法 `mul`(matrix × matrix)
 
-### 3. 線性方程組與分解
-- [ ] Gaussian elimination(高斯消去法)
-- [ ] 行列式 `determinant`
-- [ ] 反矩陣 `inverse`
-- [ ] 秩 `rank`
+### 3. 向量空間:span、線性獨立、basis、座標
+- [x] span:`Span`、`spans_all`、`on_line` / `on_plane` / `affine_span`
+- [x] 線性獨立:`is_linearly_independent` / `is_linearly_dependent`、冗餘數 `redundancy_count`、可移除行 `removable_columns`、首個相依索引 `first_dependent_index`
+- [x] basis `is_basis` / `is_standard_basis`、基底座標 `coordinates` / `from_coordinates`
 
-### 4. 進階主題
-- [ ] LU 分解
-- [ ] 特徵值 / 特徵向量 eigenvalue / eigenvector
-- [ ] 線性變換與幾何意義(旋轉、投影、縮放)
+### 4. 線性方程組與分解
+- [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`
+- [x] Gaussian elimination:`row_echelon_form` / `reduced_row_echelon_form`、秩 `rank`、零化度 `nullity`、pivot / free 行
+- [ ] 行列式 `determinant`、反矩陣 `inverse`
 
-> 進度會隨著實作逐步勾選。每個主題對應一支 `src/*.rs` 與其 `#[cfg(test)]` 測試模組。
+### 5. 進階主題
+- [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)
+- [ ] LU 分解、特徵值 / 特徵向量 eigenvalue / eigenvector
+
+> 每個主題對應一支 `src/*.rs` 與其 inline `#[cfg(test)]` 測試模組。
 
 ## 開始使用
 
@@ -61,22 +61,50 @@ cargo llvm-cov
 ```
 
 > 需要 Rust 1.85 以上(2024 edition,見 `Cargo.toml`)。
+>
+> 常用指令由 [Taskfile](https://taskfile.dev) 包裝:`task test`、`task check`(fmt + lint + test 的 pre-commit gate)、`task cover` 等,`task` 列出全部。
+
+## 視覺化
+
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」與「線性相依 / 平行」的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 的 `multiply_vector` 算的。
+
+WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
+
+```bash
+# 1. 建 WASM 套件 → web/src/lib/wasm(需 wasm-pack 0.15+ 與 wasm32 target)
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+task wasm:build
+
+# 2. 跑前端(web/ 一律用 pnpm)
+cd web && pnpm install && pnpm dev
+```
 
 ## 專案結構
 
-純 library crate 風格,概念對應檔案:
+純 library crate(無 `main.rs` / bin)。一個概念一個模組:
 
 ```
 .
-├── Cargo.toml
-└── src/
-    ├── lib.rs        # crate root,re-export 各模組公開 API
-    ├── vector.rs     # Vector 型別與運算
-    ├── matrix.rs     # Matrix 型別與運算
-    └── ...           # 隨學習路徑擴充
+├── Cargo.toml          # wasm 為 optional feature,預設不啟用
+├── Taskfile.yml        # cargo 指令包裝(task test / check / wasm:build …)
+├── src/
+│   ├── lib.rs          # crate root,re-export 各模組公開 API
+│   ├── error.rs        # 共用錯誤型別 LinAlgError
+│   ├── vector.rs       # Vector:加法、純量乘法、線性組合、標準基底、平行
+│   ├── matrix.rs       # Matrix:加法 / 純量乘、轉置、identity、A·v、EROs、echelon 判定
+│   ├── span.rs         # span 與線性組合見證
+│   ├── independence.rs # 線性獨立 / 冗餘 / 可移除行
+│   ├── basis.rs        # basis 判定
+│   ├── coordinates.rs  # 基底下的座標表示與還原
+│   ├── system.rs       # 線性方程組 Ax=b 與解的分類
+│   ├── elimination.rs  # Gaussian elimination、rank、nullity
+│   ├── predicate_set.rs# 以述詞表示的集合 PredicateSet
+│   └── wasm.rs         # #[cfg(feature = "wasm")] WASM binding(2D 變換視覺化)
+└── web/                # React + Vite 前端(透過 WASM 呼叫 core)
 ```
 
-crate 名稱為 `linear_algebra_101`,測試以 inline `#[cfg(test)] mod tests` 形式與實作同檔。
+crate 名稱為 `linear_algebra_101`,測試以 inline `#[cfg(test)] mod tests` 與實作同檔(white-box,可存取 private 欄位)。
 
 ## License
 
