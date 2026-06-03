@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
+import { Route as SpanRouteImport } from './routes/span'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TransformRoute = TransformRouteImport.update({
   id: '/transform',
   path: '/transform',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpanRoute = SpanRouteImport.update({
+  id: '/span',
+  path: '/span',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -25,27 +31,31 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/transform'
+  fullPaths: '/' | '/span' | '/transform'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/transform'
-  id: '__root__' | '/' | '/transform'
+  to: '/' | '/span' | '/transform'
+  id: '__root__' | '/' | '/span' | '/transform'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SpanRoute: typeof SpanRoute
   TransformRoute: typeof TransformRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/transform'
       fullPath: '/transform'
       preLoaderRoute: typeof TransformRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/span': {
+      id: '/span'
+      path: '/span'
+      fullPath: '/span'
+      preLoaderRoute: typeof SpanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SpanRoute: SpanRoute,
   TransformRoute: TransformRoute,
 }
 export const routeTree = rootRouteImport

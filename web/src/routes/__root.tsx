@@ -38,6 +38,12 @@ function RootLayout() {
             >
               2D 變換
             </Link>
+            <Link
+              to="/span"
+              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
+            >
+              張成 Span
+            </Link>
           </div>
         </nav>
       </header>

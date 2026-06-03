@@ -2,11 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
-import {
-  TransformCanvas,
-  type Matrix2x2,
-  type Vec2,
-} from '../components/TransformCanvas'
+import { TransformCanvas } from '../components/TransformCanvas'
+import { NumberField, Row, Status } from '../components/ui'
+import { fmt } from '../lib/format'
+import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/transform')({
   component: TransformDemo,
@@ -118,45 +117,4 @@ function TransformDemo() {
       </div>
     </section>
   )
-}
-
-function Status({ children }: { children: React.ReactNode }) {
-  return <p className="text-slate-400">{children}</p>
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-sm text-slate-400">{label}</span>
-      <span className="font-mono text-slate-100">{children}</span>
-    </div>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-slate-400">{label}</span>
-      <input
-        type="number"
-        step="any"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 focus:border-violet-500 focus:outline-none"
-      />
-    </label>
-  )
-}
-
-/** 把浮點數收成最多 4 位、去掉尾隨 0(-0 也歸 0)。 */
-function fmt(n: number): string {
-  return Number(n.toFixed(4)).toString()
 }
