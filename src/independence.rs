@@ -21,9 +21,15 @@ use crate::{Span, Vector};
 /// 這等於 rank(A)=n(A 以向量為行,n 是向量個數)。
 ///
 /// 空集依慣例**獨立**,且**不需特判**:空 Span 的 dimension 是 0,恰好等於 0 個向量,
-/// 公式 `0 == 0` 自然回 true。含零向量的清單**必相依**,因為 1·0=0 是非平凡組合 ——
-/// rank 判準會自動抓到(零行不貢獻 rank,使 dimension < n)。
+/// 公式 `0 == 0` 自然回 true。含 (近)零向量的清單**必相依**,因為 1·0=0 是非平凡組合 ——
+/// 下面的快路徑用一次便宜掃描解決它,rank 判準則作為 backstop 同樣會抓到(零行不貢獻 rank)。
 pub fn is_linearly_independent(epsilon: f64, vectors: &[Vector]) -> bool {
+    // 快路徑:任何 (近)零向量都單獨逼出相依 —— 對 vₖ≈0,組合 0·v₁+…+1·vₖ+…+0·vₙ=0 是
+    // 非平凡的(vₖ 的權重 1≠0)。一次 O(mn) 掃描就解決這些 case,省下後面 Span/dimension
+    // 裡 O(mn²) 的消去。安全:rank 判準對它們會給同樣答案,這只是讓簡單情形更快。
+    if vectors.iter().any(|v| v.is_approx_zero(epsilon)) {
+        return false;
+    }
     // 獨立 ⟺ rank 等於數量 —— 每個向量都帶來新方向,無一多餘。`dimension()` 即 rank(A)。
     // 對照上一課的 `spans_all`:那裡 dimension 比**列數**(onto),這裡比**向量個數**。
     Span::new(epsilon, vectors.to_vec()).dimension() == vectors.len()
@@ -82,7 +88,12 @@ mod tests {
                 false,
             ),
             (vec![v(vec![0.0, 0.0])], false), // 單獨一個零向量相依(1·0=0)
-            (vec![v(vec![3.0, 4.0])], true),  // 單一非零向量獨立
+            // 數值零:每個分量遠低於 INDEP_EPS(1e-9),容差版快路徑視為零向量 → 相依。
+            // 精確 is_zero 會漏掉它;此 case 釘住容差行為,防退回精確比較。
+            (vec![v(vec![1e-12, 1e-12])], false),
+            // 門檻另一側:1e-6 遠高於 INDEP_EPS,是真正的非零向量,快路徑不吞 → 獨立。
+            (vec![v(vec![1e-6, 0.0])], true),
+            (vec![v(vec![3.0, 4.0])], true), // 單一非零向量獨立
         ];
         for (vectors, want) in cases {
             assert_eq!(

@@ -89,9 +89,17 @@ impl Vector {
         self.approx_equals(other, 0.0)
     }
 
-    /// 是否為零向量(所有元素皆為 0)。
+    /// 是否在容差 `epsilon` 內近似為零向量(每個分量絕對值 ≤ epsilon)。它之於 `is_zero`,
+    /// 正如 `approx_equals` 之於 `equals`:容差版的孿生,用在「近零即視為零」之處 ——
+    /// 例如浮點消去之後。epsilon = 0 時與 `is_zero` 一致。
+    pub fn is_approx_zero(&self, epsilon: f64) -> bool {
+        self.approx_equals(&Vector::new(self.rows()), epsilon)
+    }
+
+    /// 是否為零向量(所有元素**精確**為 0)—— `is_approx_zero` 的 epsilon=0 特例,
+    /// 正如 `equals` 是 `approx_equals` 的特例。
     pub fn is_zero(&self) -> bool {
-        self.data.iter().all(|&x| x == 0.0)
+        self.is_approx_zero(0.0)
     }
 
     /// 純量乘法:每個元素乘上 `scalar`,回傳新向量。
