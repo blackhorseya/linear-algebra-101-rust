@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# wasm-pack 產出(由 repo 根目錄的 `task wasm:build` 生成),衍生產物不入版控
+src/lib/wasm/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

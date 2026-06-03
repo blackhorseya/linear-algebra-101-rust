@@ -3,7 +3,18 @@ name = "linear-algebra-101"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+# cdylib:wasm-pack 產 .wasm 用;rlib:保留一般 Rust/測試對本 crate 的引用。
+# 正常 cargo test/build 走 rlib,不受 wasm 影響。
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+# 只在開 wasm feature 時才拉進來 —— 不開等於不存在,正常測試流程不碰它。
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+# WASM binding 隔離在獨立 feature;dep: 語法讓開 feature 才編 binding。
+wasm = ["dep:wasm-bindgen"]
 
 [dev-dependencies]
 proptest = "1.11.0"

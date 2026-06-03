@@ -13,6 +13,8 @@ pub mod predicate_set;
 pub mod span;
 pub mod system;
 pub mod vector;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use basis::{is_basis, is_standard_basis};
 pub use error::LinAlgError;

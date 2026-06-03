@@ -52,6 +52,13 @@ tasks:
     cmds:
       - cargo build
 
+  wasm:build:
+    desc: Build the WASM package with wasm-pack into web/src/lib/wasm (需先 cargo install wasm-pack + rustup target add wasm32-unknown-unknown)
+    cmds:
+      # --out-dir 相對 crate root(本 repo 根目錄)。產物落在 web/src/lib/wasm,
+      # 與 web/src/lib/ 既有的基礎設施(query-client.ts)同層,前端 import 路徑最短。
+      - wasm-pack build --target web --out-dir web/src/lib/wasm -- --features wasm
+
   check:
     desc: Run fmt:check, lint and tests as a pre-commit gate
     cmds:
