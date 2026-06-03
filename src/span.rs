@@ -66,11 +66,6 @@ impl Span {
     /// 精確等價於「系統 A·c = x 有解 c」—— 因為在 column view 裡,A·c **就是**那個
     /// 加權和。於是成員資格 reduce 成一致性,正是幾何通往代數的橋。
     pub fn contains(&self, x: &Vector) -> bool {
-        // 換你寫:`match &self.matrix` 分三條路 ——
-        //   1. None(空 span {0}):x 是不是零向量?(`x.is_zero()`)
-        //   2. Some(a):成員資格就是一致性。用 `System::new(a.clone(), x.clone())` 建
-        //      系統,`Ok(system)` 時回 `system.is_consistent(self.epsilon)`。
-        //   3. `System::new` 回 `Err`(維度不合):x 不在對的空間 → `false`。
         match &self.matrix {
             None => x.is_zero(), // {0} 只有零向量
             Some(a) => match System::new(a.clone(), x.clone()) {
@@ -149,11 +144,6 @@ impl Span {
     /// 的所有線性組合自然也進去了)。於是集合相等 —— 跟 `Set::equals` 同一個「⊆ 反對稱」
     /// 套路 —— reduce 成一個有限檢查。
     pub fn equals(&self, other: &Span) -> bool {
-        // 換你寫:相互包含。self ⊆ other ⟺ self 的**每個** generator 都被 other 包含;
-        // 反向亦然,兩者都成立才相等。提示:`self.generators` / `other.generators` 是
-        // 私有欄位,但同模組存取得到;配 `.iter().all(|g| ….contains(g))` 與 `&&`。
-        // 只查 generator 就夠,因為 span 對線性組合封閉 —— generator 都在,它們張出的
-        // 一切就都在。
         self.generators.iter().all(|g| other.contains(g))
             && other.generators.iter().all(|g| self.contains(g))
     }
@@ -165,9 +155,6 @@ impl Span {
     /// **易錯點**:`ambient_dim` 比的是 A 的**列數 m**(目標空間 ℝᵐ 的軸數),不是行數 n
     /// —— Theorem 1.6 的 (c) 是 full **ROW** rank。高瘦矩陣(m > n)的行再多也張不滿 ℝᵐ。
     pub fn spans_all(&self, ambient_dim: usize) -> bool {
-        // 換你寫:一行。span 填滿 ℝ^ambient_dim ⟺ 它的獨立方向數(`self.dimension()`)
-        // 恰好等於環境維度。關鍵:跟 `ambient_dim`(= A 的**列數** m)比,而不是行數 ——
-        // 對照上方 doc 的「易錯點」。
         self.dimension() == ambient_dim
     }
 
@@ -643,9 +630,6 @@ mod laws {
     /// 條件 (d):A 的 RREF 沒有零列;等價於 (e) 每列都帶一個 pivot。`pivot_col` 對零列回
     /// `None`,所以「每列有 pivot」就是「沒有任一列的 `pivot_col` 是 `None`」。
     fn rref_has_no_zero_row(a: &Matrix, eps: f64) -> bool {
-        // 換你寫:先把 a 化成 RREF(`a.reduced_row_echelon_form(eps)`),再檢查**每一列**
-        // 都有 pivot。`rref.pivot_col(i, eps)` 對零列回 `None`,所以條件就是
-        // 「(0..rref.rows()) 每個 i 都讓 pivot_col(i).is_some()」。
         let rref = a.reduced_row_echelon_form(eps);
         (0..rref.rows()).all(|i| rref.pivot_col(i, eps).is_some())
     }

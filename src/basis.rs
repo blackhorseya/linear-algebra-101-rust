@@ -22,10 +22,6 @@ use crate::{Span, Vector, is_linearly_independent};
 /// 逼出 rank=向量個數(=n),於是 `ℝ^dim` 的任何基底**恰好有 dim 個向量** —— 矩陣是方的。
 /// 這就是定理「`ℝ^dim` 的每組基底都有 dim 個元素」,它從兩者的**合取**浮現,而非被假設。
 pub fn is_basis(epsilon: f64, dim: usize, vectors: &[Vector]) -> bool {
-    // 換你寫:基底 = 兩定理同時成立,回傳兩者的合取。
-    //   - spanning:`Span::new(epsilon, vectors.to_vec()).spans_all(dim)`(Theorem 1.6)
-    //   - independent:`is_linearly_independent(epsilon, vectors)`(Theorem 1.7)
-    //   注意:**不要**檢查「向量數 == dim」—— 它會自動成立(見上方 doc 的「免費掉出來」)。
     let spanning = Span::new(epsilon, vectors.to_vec()).spans_all(dim);
     let independent = is_linearly_independent(epsilon, vectors);
     spanning && independent
@@ -35,11 +31,6 @@ pub fn is_basis(epsilon: f64, dim: usize, vectors: &[Vector]) -> bool {
 /// 這是基底的典範例子,也比 [`is_basis`] 更嚴格 —— 它在意順序與精確的向量,而不只是
 /// 「它們獨立地張滿空間」。
 pub fn is_standard_basis(epsilon: f64, dim: usize, vectors: &[Vector]) -> bool {
-    // 換你寫:更嚴格、順序敏感的檢查。
-    //   - 長度不是 dim → 直接 `false`。
-    //   - 否則第 i 個向量必須(在容差 epsilon 內)等於第 i 個標準向量:
-    //     `Vector::standard(dim, i)`(回 `Result`;i < dim 故必 `Ok`),再
-    //     `v.approx_equals(&eᵢ, epsilon)`。提示:`.iter().enumerate().all(...)`。
     if vectors.len() != dim {
         return false;
     }

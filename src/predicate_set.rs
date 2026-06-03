@@ -86,8 +86,6 @@ impl<T: 'static> PredicateSet<T> {
 
     /// 交集 self ∩ other = `{ x | x ∈ self 且 x ∈ other }` —— 布林 AND 抬升到集合。
     pub fn intersection(&self, other: &PredicateSet<T>) -> PredicateSet<T> {
-        // 換你寫:照上面 `union` 的同一套路 —— 把兩邊的規則各 `Rc::clone` 一份、
-        // `move` 進一個新 closure,只是把 `||` 換成 `&&`。
         let p = Rc::clone(&self.predicate);
         let q = Rc::clone(&other.predicate);
         PredicateSet::new(move |x| p(x) && q(x))
@@ -98,8 +96,6 @@ impl<T: 'static> PredicateSet<T> {
     /// 注意:**不需要**傳入宇集參數。對述詞集合而言,把規則取反就已經描述了「所有
     /// 不在 self 裡的東西」,宇集 U 是隱含的(就是整個型別 T)。
     pub fn complement(&self) -> PredicateSet<T> {
-        // 換你寫:只 `Rc::clone` self 一份規則、`move` 進新 closure,回傳 `!p(x)`。
-        // 想想為何這裡不需要(也用不到)宇集參數 —— 對照 doc 註解。
         let p = Rc::clone(&self.predicate);
         PredicateSet::new(move |x| !p(x))
     }
