@@ -19,7 +19,7 @@
 //! 都得有 A 在手。需要集合代數(∪ / ∩ / …)那套視角時,用
 //! [`as_predicate`](Span::as_predicate) 降階回述詞集合。
 
-use crate::{Matrix, PredicateSet, System, Vector};
+use crate::{Matrix, PredicateSet, Solution, System, Vector};
 
 /// span{generators…},以矩陣 A(生成向量為行)為內部表示的 column space。
 ///
@@ -76,6 +76,34 @@ impl Span {
             Some(a) => match System::new(a.clone(), x.clone()) {
                 Ok(system) => system.is_consistent(self.epsilon),
                 Err(_) => false, // 維度不合 → x 不在對的空間,自然不在 span 裡
+            },
+        }
+    }
+
+    /// 建構式成員判定:[`contains`](Span::contains) 給的是赤裸的 yes/no,這支交回那個「yes」
+    /// 背後的**見證** —— 一組權重 c,使 `x = c₁v₁ + … + cₖvₖ`(本 span 的 generator 依 c
+    /// 加權),若存在的話。
+    ///
+    /// 它刻意重用 [`Solution`]:「x 在 span{v₁…vₖ} 裡」**就是**「A·c=x 一致」(column view,
+    /// 與 `contains` 過的同一座橋),所以「用哪些權重?」字面上就是「解那個系統求 c」。用
+    /// `Solution` 當載體,讓這個恆等式顯示在型別裡。三結局透過成員資格重讀:
+    /// - [`Inconsistent`](Solution::Inconsistent) —— x ∉ span,沒有權重能組出它(`contains` 為 false)。
+    /// - [`Unique`](Solution::Unique) —— x ∈ span **且** generator 獨立,權重是 x 在此 span 的**唯一座標**。
+    /// - [`Infinite`](Solution::Infinite) —— x ∈ span 但 generator 相依,x 有多種表示、無正則者。
+    ///
+    /// `combination(x)` 非 `Inconsistent` ⟺ `contains(x)` 為 true —— 建構式與布林判定由建構天然一致。
+    pub fn combination(&self, x: &Vector) -> Solution {
+        match &self.matrix {
+            None => {
+                if x.is_zero() {
+                    Solution::Unique(Vector::new(0)) // {0} 只有零向量,它的權重是空和
+                } else {
+                    Solution::Inconsistent // {0} 以外的向量不在裡面
+                }
+            }
+            Some(a) => match System::new(a.clone(), x.clone()) {
+                Ok(system) => system.solve(self.epsilon), // 系統有解,交給 solve 判定三結局
+                Err(_) => Solution::Inconsistent, // 維度不合 → x 不在對的空間,自然不在 span 裡
             },
         }
     }
@@ -512,6 +540,74 @@ mod tests {
             "rank 不足即非 onto"
         );
     }
+
+    #[test]
+    fn combination_classifies_and_witnesses() {
+        // 建構式成員判定:除了 yes/no,還交回見證權重,並把答案分入 solve 的三結局 ——
+        // generator 獨立時唯一座標、相依時無限多、x 不在 span 時無解;且 contains 必須一致。
+        // 1. xy 平面 span{e₀,e₁}⊂ℝ³,獨立 generator:(3,5,0) 的唯一座標 (3,5)。
+        let plane = Span::new(
+            SPAN_EPS,
+            vec![v(vec![1.0, 0.0, 0.0]), v(vec![0.0, 1.0, 0.0])],
+        );
+        match plane.combination(&v(vec![3.0, 5.0, 0.0])) {
+            Solution::Unique(w) => {
+                assert!(
+                    w.approx_equals(&v(vec![3.0, 5.0]), SPAN_EPS),
+                    "唯一座標應為 (3,5)"
+                );
+                // 權重必須真能重建 x。
+                let rebuilt = Vector::linear_combination(
+                    w.entries(),
+                    &[v(vec![1.0, 0.0, 0.0]), v(vec![0.0, 1.0, 0.0])],
+                )
+                .unwrap();
+                assert!(
+                    rebuilt.approx_equals(&v(vec![3.0, 5.0, 0.0]), SPAN_EPS),
+                    "權重未能重建 x"
+                );
+            }
+            other => panic!("獨立 generator 上應為 Unique,得 {other:?}"),
+        }
+        assert!(plane.contains(&v(vec![3.0, 5.0, 0.0])));
+
+        // 2. 同平面,但 (3,5,1) 被抬離:無權重。
+        assert!(matches!(
+            plane.combination(&v(vec![3.0, 5.0, 1.0])),
+            Solution::Inconsistent
+        ));
+        assert!(!plane.contains(&v(vec![3.0, 5.0, 1.0])));
+
+        // 3. 相依 generator span{(1,1),(2,2)} 是一條線。(3,3) 在線上,但 (3,0)、(1,1) 都能
+        //    見證它,故權重**不唯一**。
+        let line = Span::new(SPAN_EPS, vec![v(vec![1.0, 1.0]), v(vec![2.0, 2.0])]);
+        assert!(matches!(
+            line.combination(&v(vec![3.0, 3.0])),
+            Solution::Infinite
+        ));
+        assert!(line.contains(&v(vec![3.0, 3.0])));
+
+        // 4. 空 span {0}:零向量是**空組合** —— 唯一,權重向量長度 0(沒有 generator 可加權)。
+        let empty = Span::new(SPAN_EPS, vec![]);
+        match empty.combination(&v(vec![0.0, 0.0, 0.0])) {
+            Solution::Unique(w) => assert_eq!(w.rows(), 0, "空 span 的權重應為 length-0"),
+            other => panic!("空 span 的零向量應為 Unique,得 {other:?}"),
+        }
+        assert!(empty.contains(&v(vec![0.0, 0.0, 0.0])));
+
+        // 5. 空 span {0} 只含零:非零向量無見證。
+        assert!(matches!(
+            empty.combination(&v(vec![0.0, 0.0, 1.0])),
+            Solution::Inconsistent
+        ));
+
+        // 6. 跨維度:ℝ² 查詢對 ℝ³ 的 span,根本不在環境空間 → 無權重(System::new 的 Err 分支)。
+        let r3 = Span::new(SPAN_EPS, vec![v(vec![1.0, 2.0, 3.0])]);
+        assert!(matches!(
+            r3.combination(&v(vec![1.0, 2.0])),
+            Solution::Inconsistent
+        ));
+    }
 }
 
 /// Theorem 1.6 化為可執行斷言。對 m×n 矩陣 A,五句**等價**:(a) A 的行張滿 ℝᵐ、
@@ -589,6 +685,38 @@ mod laws {
                     "(a) 成立但 Ax=b 不相容\n a={a:?}\n b={b:?}"
                 );
             }
+        }
+
+        /// 「combination 回傳見證」化為隨機律:x 由 generator 線性組合而成 → 依建構在 span 裡,
+        /// 故 combination 絕不對它回 Inconsistent;答案唯一時,回傳的權重必須真能重建那個 x。
+        /// 並一併探測建構式 ⟺ 布林一致:contains(probe) == (combination(probe) 非 Inconsistent)。
+        #[test]
+        fn combination_is_a_witness(
+            (gens, weights, probe) in (1usize..=4, 1usize..=4).prop_flat_map(|(dim, k)| {
+                (
+                    prop::collection::vec(int_vector(dim), k),
+                    int_vector(k),
+                    int_vector(dim),
+                )
+            }),
+        ) {
+            const EPS: f64 = 1e-9;
+            let span = Span::new(EPS, gens.clone());
+            // x = Σ weightsⱼ·gensⱼ 依建構在 span{gens} 裡 —— 成員資格的定義,combination 欠它見證。
+            let x = Vector::linear_combination(weights.entries(), &gens).unwrap();
+            let got = span.combination(&x);
+            prop_assert!(
+                !matches!(got, Solution::Inconsistent),
+                "x 是 generator 的組合卻回 Inconsistent\n x={x:?}"
+            );
+            // 唯一解必須帶回能重建 x 的權重(唯一答案就是那一組真座標)。
+            if let Solution::Unique(w) = &got {
+                let rebuilt = Vector::linear_combination(w.entries(), &gens).unwrap();
+                prop_assert!(rebuilt.approx_equals(&x, EPS), "唯一權重未能重建 x\n x={x:?}");
+            }
+            // 任意探針(通常落在 span 外):赤裸與建構式判定必須一致。
+            let has_witness = !matches!(span.combination(&probe), Solution::Inconsistent);
+            prop_assert_eq!(span.contains(&probe), has_witness, "contains 與 combination 不一致");
         }
     }
 }
