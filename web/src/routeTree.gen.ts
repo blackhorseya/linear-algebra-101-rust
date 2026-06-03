@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
 import { Route as SpanRouteImport } from './routes/span'
+import { Route as EliminationRouteImport } from './routes/elimination'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TransformRoute = TransformRouteImport.update({
@@ -23,6 +24,11 @@ const SpanRoute = SpanRouteImport.update({
   path: '/span',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EliminationRoute = EliminationRouteImport.update({
+  id: '/elimination',
+  path: '/elimination',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,30 +37,34 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/elimination': typeof EliminationRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/elimination': typeof EliminationRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/elimination': typeof EliminationRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/span' | '/transform'
+  fullPaths: '/' | '/elimination' | '/span' | '/transform'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/span' | '/transform'
-  id: '__root__' | '/' | '/span' | '/transform'
+  to: '/' | '/elimination' | '/span' | '/transform'
+  id: '__root__' | '/' | '/elimination' | '/span' | '/transform'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EliminationRoute: typeof EliminationRoute
   SpanRoute: typeof SpanRoute
   TransformRoute: typeof TransformRoute
 }
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/elimination': {
+      id: '/elimination'
+      path: '/elimination'
+      fullPath: '/elimination'
+      preLoaderRoute: typeof EliminationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EliminationRoute: EliminationRoute,
   SpanRoute: SpanRoute,
   TransformRoute: TransformRoute,
 }

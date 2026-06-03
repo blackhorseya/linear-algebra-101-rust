@@ -44,6 +44,12 @@ function RootLayout() {
             >
               張成 Span
             </Link>
+            <Link
+              to="/elimination"
+              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
+            >
+              高斯消去
+            </Link>
           </div>
         </nav>
       </header>
