@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Vercel 部署 — 安裝階段。
 #
-# Vercel 的 build image 只有 Node/pnpm,沒有 Rust 工具鏈,所以這裡補齊
-# Rust + wasm32 target + wasm-pack,最後才裝前端依賴。
-# (抽成 script 是因為 vercel.json 的 installCommand 有 256 字元上限。)
+# 重要:Vercel 的 build image 已預裝 Rust 於 /rust(CARGO_HOME/RUSTUP_HOME=/rust)。
+# 千萬別用 rustup installer 重裝 —— build container 的 $HOME(/vercel)與 euid
+# home(/root)不一致,重裝會走到 /vercel/.cargo/env 這條不存在的路而失敗。
+# 直接把內建 toolchain 的 bin 掛上 PATH 即可。
 set -euo pipefail
 
-# minimal profile:只裝 rustc/cargo,略過 docs/clippy 等,加快安裝。
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-  | sh -s -- -y --default-toolchain stable --profile minimal
-. "$HOME/.cargo/env"
+export PATH="/rust/bin:$PATH"
+export CARGO_HOME="${CARGO_HOME:-/rust}"
+export RUSTUP_HOME="${RUSTUP_HOME:-/rust}"
 
-# wasm 編譯目標 + wasm-pack(官方 installer 下載預編譯 binary,比 cargo install 快)。
+# 補上 wasm 編譯目標 + wasm-pack(官方 installer 下載預編譯 binary,落在 $CARGO_HOME/bin)。
 rustup target add wasm32-unknown-unknown
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
