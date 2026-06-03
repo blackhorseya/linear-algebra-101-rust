@@ -37,6 +37,11 @@ pub enum LinAlgError {
     /// 例:把增廣矩陣 `[A | b]` 拆回方程組時,沒有最後一行可剝成常數向量 b。(見
     /// [`System::from_augmented_matrix`](crate::System::from_augmented_matrix)。)
     EmptyMatrix,
+    /// 給定的向量不構成 ℝ^`dim` 的一組基底,因此座標未定義 —— 它要嘛不生成
+    /// (有向量碰不到)、要嘛相依(同一向量有多種權重、無正則者)。帶上 ambient
+    /// 維度 `dim`,呼叫端與訊息都看得到「不是哪個空間的基底」。(見
+    /// [`coordinates`](crate::coordinates)。)
+    NotABasis { dim: usize },
 }
 
 impl fmt::Display for LinAlgError {
@@ -71,6 +76,12 @@ impl fmt::Display for LinAlgError {
             }
             LinAlgError::EmptyMatrix => {
                 write!(f, "empty matrix: operation requires at least one column")
+            }
+            LinAlgError::NotABasis { dim } => {
+                write!(
+                    f,
+                    "not a basis: given vectors are not a basis of ℝ^{dim}, so coordinates are undefined"
+                )
             }
         }
     }
@@ -141,6 +152,16 @@ mod tests {
         assert_eq!(
             LinAlgError::EmptyMatrix.to_string(),
             "empty matrix: operation requires at least one column"
+        );
+    }
+
+    /// 同 `IndexOutOfRange`:帶資料的 variant,除了鎖措辭也驗 `dim` 真的被插進訊息 ——
+    /// 訊息要看得見「不是哪個空間的基底」。
+    #[test]
+    fn display_interpolates_not_a_basis() {
+        assert_eq!(
+            LinAlgError::NotABasis { dim: 2 }.to_string(),
+            "not a basis: given vectors are not a basis of ℝ^2, so coordinates are undefined"
         );
     }
 

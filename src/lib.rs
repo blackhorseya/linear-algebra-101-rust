@@ -5,6 +5,7 @@
 //! Vector(運算 + linear_combination + 標準基底 eᵢ)、System(線性方程組 Ax=b)。
 
 pub mod basis;
+pub mod coordinates;
 pub mod elimination;
 pub mod error;
 pub mod independence;
@@ -17,6 +18,7 @@ pub mod vector;
 pub mod wasm;
 
 pub use basis::{is_basis, is_standard_basis};
+pub use coordinates::{coordinates, from_coordinates};
 pub use error::LinAlgError;
 pub use independence::{
     is_linearly_dependent, is_linearly_independent, redundancy_count, removable_columns,
