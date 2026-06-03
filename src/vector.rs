@@ -102,6 +102,25 @@ impl Vector {
         self.is_approx_zero(0.0)
     }
 
+    /// self 與 other 是否**平行**(共線):一個是另一個的純量倍數,故兩者落在同一條過原點的
+    /// 直線上。對**一對**向量,這恰是線性相依 —— Theorem 1.7 的 n=2 特例。零向量與任何向量
+    /// 平行(0 = 0·w)。長度不同的向量永不平行(根本不在同一空間)。
+    pub fn is_parallel(&self, other: &Vector, epsilon: f64) -> bool {
+        if self.rows() != other.rows() {
+            return false; // 不在同一空間
+        }
+        // pivot:第一個 self 或 other 不可忽略的位置;沒有(都近零)就視為平行。
+        let pivot = (0..self.rows())
+            .find(|&i| self.data[i].abs() > epsilon || other.data[i].abs() > epsilon);
+        match pivot {
+            None => true, // 都近零 → 平行
+            Some(pivot) => (0..self.rows()).all(|i| {
+                (self.data[i] * other.data[pivot] - self.data[pivot] * other.data[i]).abs()
+                    <= epsilon
+            }), // cross-multiply 判共線,對 self/other 對稱
+        }
+    }
+
     /// 純量乘法:每個元素乘上 `scalar`,回傳新向量。
     pub fn scale(&self, scalar: f64) -> Vector {
         let scaled_data: Vec<f64> = self.data.iter().map(|x| x * scalar).collect();
@@ -236,6 +255,39 @@ mod tests {
         assert_eq!(v.scale(2.0).data, vec![2.0, 4.0, 6.0]);
         assert_eq!(v.scale(0.0).data, vec![0.0, 0.0, 0.0]);
         assert_eq!(v.scale(-1.0).data, vec![-1.0, -2.0, -3.0]);
+    }
+
+    #[test]
+    fn is_parallel_detects_collinearity() {
+        // 平行 = 共線 = 一個是另一個的純量倍數;且對兩個參數對稱。
+        let cases: Vec<(Vec<f64>, Vec<f64>, bool)> = vec![
+            (vec![1.0, 2.0], vec![2.0, 4.0], true),            // 純量倍數
+            (vec![1.0, 0.0], vec![-3.0, 0.0], true),           // 負倍數
+            (vec![0.0, 0.0], vec![5.0, 7.0], true),            // 零向量與任何向量平行
+            (vec![0.0, 0.0], vec![0.0, 0.0], true),            // 兩個零向量
+            (vec![0.0, 5.0], vec![0.0, 1.0], true),            // pivot 越過共同的前導零
+            (vec![1.0, 0.0], vec![0.0, 1.0], false),           // 垂直軸
+            (vec![1.0, 2.0], vec![2.0, 5.0], false),           // 歪斜
+            (vec![1.0, 0.0, 0.0], vec![0.0, 0.0, 1.0], false), // ℝ³ 不平行
+        ];
+        for (a, b, want) in cases {
+            let u = vector_from(a.clone());
+            let w = vector_from(b.clone());
+            assert_eq!(u.is_parallel(&w, 1e-9), want, "is_parallel({a:?}, {b:?})");
+            assert_eq!(
+                w.is_parallel(&u, 1e-9),
+                want,
+                "is_parallel 應對稱: {b:?}, {a:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_parallel_rejects_different_lengths() {
+        // 長度不同永不平行(不在同一空間)。
+        let u = vector_from(vec![1.0, 2.0]);
+        let w = vector_from(vec![1.0, 2.0, 3.0]);
+        assert!(!u.is_parallel(&w, 1e-9));
     }
 
     #[test]

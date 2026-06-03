@@ -30,6 +30,11 @@ pub fn is_linearly_independent(epsilon: f64, vectors: &[Vector]) -> bool {
     if vectors.iter().any(|v| v.is_approx_zero(epsilon)) {
         return false;
     }
+    // 快路徑:一對向量獨立 ⟺ 兩者**不平行**(都不是對方的純量倍數)—— Theorem 1.7 的 n=2
+    // 特例。is_parallel 用一次 O(m) minor 掃描判定,省下 m×2 矩陣及其消去。
+    if vectors.len() == 2 {
+        return !vectors[0].is_parallel(&vectors[1], epsilon);
+    }
     // 獨立 ⟺ rank 等於數量 —— 每個向量都帶來新方向,無一多餘。`dimension()` 即 rank(A)。
     // 對照上一課的 `spans_all`:那裡 dimension 比**列數**(onto),這裡比**向量個數**。
     Span::new(epsilon, vectors.to_vec()).dimension() == vectors.len()
@@ -459,6 +464,25 @@ mod laws {
             // (2) 見證 = 最小自由行(都沒有時兩邊皆 None)
             let smallest_free = removable_columns(EPS, &vectors).into_iter().min();
             prop_assert_eq!(first, smallest_free);
+        }
+
+        /// n=2 特例:兩向量平行 ⟺ 這一對線性相依。刻意用 `Span::dimension < 2`(rank≤1=共線)
+        /// 算相依,而非 `is_linearly_independent` —— 後者現在把 pair 委派給 is_parallel,拿它
+        /// 跟自己比會是套套邏輯。
+        #[test]
+        fn is_parallel_means_pair_dependent(
+            (u, w, c) in (1usize..=4)
+                .prop_flat_map(|rows| (int_vector(rows), int_vector(rows), -3i64..=3i64)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let agree = |a: &Vector, b: &Vector| {
+                a.is_parallel(b, EPS) == (Span::new(EPS, vec![a.clone(), b.clone()]).dimension() < 2)
+            };
+            // 隨機夥伴:rows≥2 時幾乎必不平行。
+            prop_assert!(agree(&u, &w), "is_parallel 與 rank 判定不一致: u={u:?} w={w:?}");
+            // 建構夥伴 c·u:保證平行(c 可為 0),故「平行 ⟹ 相依」方向也被測到。
+            let cu = u.scale(c as f64);
+            prop_assert!(agree(&u, &cu), "is_parallel 與 rank 判定不一致(c·u): u={u:?} c={c}");
         }
     }
 }
