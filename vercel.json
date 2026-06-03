@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal && . \"$HOME/.cargo/env\" && rustup target add wasm32-unknown-unknown && curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh && corepack enable && cd web && pnpm install --frozen-lockfile",
+  "buildCommand": ". \"$HOME/.cargo/env\" && wasm-pack build --target web --out-dir web/src/lib/wasm -- --features wasm && cd web && pnpm build",
+  "outputDirectory": "web/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
