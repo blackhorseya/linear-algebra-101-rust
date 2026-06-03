@@ -59,6 +59,47 @@ pub fn removable_columns(epsilon: f64, vectors: &[Vector]) -> Vec<usize> {
     Span::new(epsilon, vectors.to_vec()).free_columns()
 }
 
+/// A 的行(向量排成行)化成 **RREF** 後,各行是否為 ℝᵐ 中**相異的標準向量** —— Theorem 1.8
+/// 的條件 (e),也是與 [`is_linearly_independent`] 殊途同歸的**獨立路徑**。它不數 rank,而是
+/// 讀階梯:當每行都是 pivot 行,完全化簡會把第 j 行變成 pivot 列為 1、其餘為 0 —— 恰是那一
+/// 列的標準向量 —— 而相異的 pivot 列使各行相異。自由(冗餘)行則化簡成非標準的行(pivot 列上
+/// 的分量是組合權重),破壞此性質。空集 vacuously true(沒有行能違反它)。
+pub fn rref_columns_are_distinct_standard_vectors(epsilon: f64, vectors: &[Vector]) -> bool {
+    // 先把臨時 Span 綁進變數:column_matrix() 借的是它。若寫成 `Span::new(...).column_matrix()`
+    // 一行,臨時 Span 會在該行結束就 drop,回傳的借用懸空。
+    let span = Span::new(epsilon, vectors.to_vec());
+    let Some(matrix) = span.column_matrix() else {
+        return true; // 空集 vacuously true
+    };
+    let rref = matrix.reduced_row_echelon_form(epsilon);
+    let mut seen = vec![false; rref.rows()];
+    for j in 0..rref.cols() {
+        // 找這一行的 pivot 列:唯一一個 ≈1 的位置,其餘分量都得 ≈0。
+        let col = rref.column(j).unwrap();
+        let mut pivot_row = None;
+        for (i, &entry) in col.entries().iter().enumerate() {
+            if entry.abs() <= epsilon {
+                continue; // ≈ 0
+            } else if (entry - 1.0).abs() <= epsilon {
+                if pivot_row.is_some() {
+                    return false; // 同一行有兩個 ≈1 → 非標準向量
+                }
+                pivot_row = Some(i);
+            } else {
+                return false; // 非 ≈0 也非 ≈1 → 非標準向量
+            }
+        }
+        // 整行掃完才定奪:沒有 ≈1 是零行/非標準;pivot 列重複則不相異。三種結局就地處理,
+        // 不必第二趟掃 seen(原本那段之所以寫不對,正是因為把這步拆出去了)。
+        match pivot_row {
+            None => return false,
+            Some(idx) if seen[idx] => return false,
+            Some(idx) => seen[idx] = true,
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +191,64 @@ mod tests {
         // 邊界:沒有向量就沒得移除,回空 vec(不 panic、不索引越界)。
         assert_eq!(removable_columns(INDEP_EPS, &[]), Vec::<usize>::new());
     }
+
+    #[test]
+    fn rref_columns_are_distinct_standard_vectors_known_cases() {
+        // 性質是關於 A 的 RREF,不是原向量。獨立輸入化簡成相異標準向量;冗餘行化簡成非標準。
+        let cases: Vec<(Vec<Vector>, bool)> = vec![
+            (vec![], true),                                     // 空集 vacuously true
+            (vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])], true), // 標準軸化簡為自己
+            // 獨立但非軸對齊:RREF 是 identity,各行變 e₀,e₁(讀的是化簡後,不是輸入)
+            (vec![v(vec![1.0, 1.0]), v(vec![1.0, -1.0])], true),
+            // v₂=2v₁:自由行化簡成 (2,0)ᵀ —— pivot 列是 2 非 ≈1 → 非標準
+            (vec![v(vec![1.0, 2.0]), v(vec![2.0, 4.0])], false),
+            // 三共平面 → false
+            (
+                vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0]), v(vec![1.0, 1.0])],
+                false,
+            ),
+            // 兩行都化簡為 e₀:各自是標準向量,但**相同** —— 只有相異性檢查能擋,這個 case
+            // 讓那個檢查是承重的而非防禦性的。
+            (vec![v(vec![1.0, 0.0]), v(vec![1.0, 0.0])], false),
+            (vec![v(vec![0.0, 0.0])], false), // 零向量(整行為零)
+            (vec![v(vec![3.0, 4.0])], true),  // 單一非零 → 化簡為 e₀
+        ];
+        for (vectors, want) in cases {
+            assert_eq!(
+                rref_columns_are_distinct_standard_vectors(INDEP_EPS, &vectors),
+                want,
+                "RREF 標準向量簽名不符: {vectors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rref_signature_matches_independence() {
+        // Theorem 1.8 (a)⟺(e):RREF「相異標準向量」簽名必須與基於 rank 的判定一致。
+        // 兩種無關的計算 —— 數 pivot vs 讀化簡後各行 —— 必須回報同一個真值。
+        let cases: Vec<Vec<Vector>> = vec![
+            vec![],
+            vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])],
+            vec![v(vec![1.0, 2.0]), v(vec![2.0, 4.0])],
+            vec![v(vec![1.0, 0.0]), v(vec![1.0, 0.0])],
+            vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0]), v(vec![1.0, 1.0])],
+            vec![v(vec![0.0, 0.0])],
+            vec![v(vec![3.0, 4.0])],
+            vec![
+                v(vec![1.0, 1.0, 0.0]),
+                v(vec![0.0, 1.0, 1.0]),
+                v(vec![1.0, 0.0, 1.0]),
+            ],
+            vec![v(vec![1.0, 2.0, 3.0]), v(vec![2.0, 4.0, 6.0])],
+        ];
+        for vectors in cases {
+            assert_eq!(
+                is_linearly_independent(INDEP_EPS, &vectors),
+                rref_columns_are_distinct_standard_vectors(INDEP_EPS, &vectors),
+                "Theorem 1.8 (a)⟺(e) 破裂: {vectors:?}"
+            );
+        }
+    }
 }
 
 /// Theorem 1.7 的 property test —— 把定理變成跨隨機矩陣的可執行斷言。四個等價條件各自
@@ -230,6 +329,67 @@ mod laws {
 
             // 計數對得上:kept + removable = 原數量。
             prop_assert_eq!(kept.len() + removable.len(), vectors.len());
+        }
+
+        /// Theorem 1.8 的七條件等價:(a) 獨立、(b) Ax=0 至多一解、(c) nullity=0、(d) rank=n、
+        /// (e) RREF 各行為相異標準向量、(f) Ax=0 唯一解、(g) 每行有 pivot —— 跨隨機矩陣同判定。
+        /// 只有 (e) 走與 rank 無關的獨立路徑,故一致才是真正的交叉驗證。
+        #[test]
+        fn theorem_1_8_conditions_agree(
+            a in (1usize..=5, 1usize..=5).prop_flat_map(|(r, c)| int_matrix(r, c)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let rows = a.rows();
+            let cols = a.cols();
+            let columns: Vec<Vector> = (0..cols).map(|j| a.column(j).unwrap()).collect();
+            let sys0 = System::new(a.clone(), Vector::new(rows)).unwrap();
+
+            let cond_a = is_linearly_independent(EPS, &columns);
+            let cond_b = sys0.has_at_most_one_solution(EPS);
+            let cond_c = a.nullity(EPS) == 0;
+            let cond_d = a.rank(EPS) == cols;
+            let cond_e = rref_columns_are_distinct_standard_vectors(EPS, &columns);
+            let cond_f = matches!(sys0.solve(EPS), Solution::Unique(_));
+            let cond_g = a.pivot_columns(EPS).len() == cols;
+
+            prop_assert!(
+                cond_a == cond_b && cond_a == cond_c && cond_a == cond_d
+                    && cond_a == cond_e && cond_a == cond_f && cond_a == cond_g,
+                "Theorem 1.8 條件不一致: (a)={cond_a} (b)={cond_b} (c)={cond_c} (d)={cond_d} (e)={cond_e} (f)={cond_f} (g)={cond_g}\n a={a:?}"
+            );
+        }
+
+        /// (b) 的「**對每個** b」內容(只看 b=0 的 agree-test 摸不到):獨立時每個 b 至多一解
+        /// (nullity 0 不留自由變數);相依時 b=0 已有無限多解,故「對每個 b 至多一解」在 b=0
+        /// 就被見證失敗 —— 這個逆向是**確定性**的,故兩邊都斷言。
+        #[test]
+        fn theorem_1_8_at_most_one_for_every_b(
+            (a, bs) in (1usize..=5, 1usize..=5).prop_flat_map(|(r, c)| {
+                (int_matrix(r, c), prop::collection::vec(int_vector(r), 1..=5))
+            }),
+        ) {
+            const EPS: f64 = 1e-9;
+            let rows = a.rows();
+            let cols = a.cols();
+            let columns: Vec<Vector> = (0..cols).map(|j| a.column(j).unwrap()).collect();
+
+            if is_linearly_independent(EPS, &columns) {
+                // 保證方向:任何 b 都不可能有超過一解。
+                for b in bs {
+                    let system = System::new(a.clone(), b.clone()).unwrap();
+                    prop_assert!(
+                        system.has_at_most_one_solution(EPS),
+                        "獨立卻有某個 b 有 >1 解\n a={a:?} b={b:?}"
+                    );
+                }
+            } else {
+                // 相依:b=0 見證「對每個 b 至多一解」失敗。
+                let sys0 = System::new(a.clone(), Vector::new(rows)).unwrap();
+                prop_assert!(
+                    !sys0.has_at_most_one_solution(EPS),
+                    "相依卻在 b=0 報 at most one\n a={a:?}"
+                );
+            }
         }
     }
 }

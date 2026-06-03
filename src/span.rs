@@ -106,6 +106,13 @@ impl Span {
         }
     }
 
+    /// 內部矩陣 A(生成向量為行)的唯讀借出;空 span `{0}` 沒有矩陣,回 `None`。給
+    /// `independence` 的 RREF 路徑用(同 `free_columns`,Rust 跨模組無 friend access,
+    /// 只能在 `Span` 開 accessor)。
+    pub fn column_matrix(&self) -> Option<&Matrix> {
+        self.matrix.as_ref()
+    }
+
     /// self 與 other 是否為**同一個** span(同一個子空間),不管它們各自用哪組生成向量
     /// 描述 —— span{e₀,e₁} 等於 span{(1,1,0),(1,-1,0)},因為兩者都是 xy 平面。
     ///

@@ -132,6 +132,17 @@ impl System {
         self.A.rank(epsilon) == self.to_augmented_matrix().rank(epsilon)
     }
 
+    /// Ax=b **至多一解**嗎 —— 唯一性那一半,與 [`is_consistent`](System::is_consistent) 的
+    /// 存在性那一半(∃ 解)對偶;兩者合起來正是「唯一解」。唯一會失敗的方式是有無限多解,
+    /// 所以這精確地是「非 `Infinite`」:無解(零解)與唯一解都算「至多一個」。
+    ///
+    /// 這是 Theorem 1.8(b) 的 per-b 讀法。定理更強的「**對每個** b 至多一解」沒辦法逐 b 檢查,
+    /// 但也不必:唯一性只由齊次系統決定(若 Ax=b 有兩解,其差就是 Ax=0 的非零解)。於是
+    /// 「對每個 b 至多一解」⟺ A 的行線性獨立 —— 即對那些行做 `is_linearly_independent`。
+    pub fn has_at_most_one_solution(&self, epsilon: f64) -> bool {
+        !matches!(self.solve(epsilon), Solution::Infinite)
+    }
+
     /// 求解線性系統:把增廣矩陣 `[A | b]` 化成 RREF,再讀出三種結局之一([`Solution`])。
     /// 真正的工都在化簡;`solve` 只是解讀那座階梯。量值在 `epsilon` 內算零(傳 `0.0` 即精確)。
     ///
@@ -647,6 +658,65 @@ mod tests {
             !hidden.is_consistent(SOLVE_EPSILON),
             "完整判準應抓到隱藏矛盾"
         );
+    }
+
+    #[test]
+    fn has_at_most_one_solution_only_fails_on_infinite() {
+        // 唯一性那一半:只有「無限多解」會讓它為 false;唯一解與無解都算「至多一個」。
+        let unique = System::new(
+            Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![5.0, 3.0]),
+        )
+        .unwrap();
+        assert!(
+            unique.has_at_most_one_solution(SOLVE_EPSILON),
+            "唯一解 → 至多一個"
+        );
+        let none = System::new(
+            Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+            Vector::from_vec(vec![2.0, 3.0]),
+        )
+        .unwrap();
+        assert!(
+            none.has_at_most_one_solution(SOLVE_EPSILON),
+            "無解 → vacuously 至多一個"
+        );
+        let infinite = System::new(
+            Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+            Vector::from_vec(vec![3.0, 6.0]),
+        )
+        .unwrap();
+        assert!(
+            !infinite.has_at_most_one_solution(SOLVE_EPSILON),
+            "無限多解 → 不是至多一個"
+        );
+    }
+
+    #[test]
+    fn unique_decomposes_into_existence_and_uniqueness() {
+        // 唯一 ⟺ 存在(is_consistent)∧ 至多一個(has_at_most_one_solution) —— 三分結局
+        // 拆成兩個獨立半邊的合取。
+        let cases = [
+            (
+                Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]),
+                Vector::from_vec(vec![5.0, 3.0]),
+            ), // unique
+            (
+                Matrix::from_rows(vec![vec![1.0, 1.0], vec![1.0, 1.0]]),
+                Vector::from_vec(vec![2.0, 3.0]),
+            ), // none
+            (
+                Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]),
+                Vector::from_vec(vec![3.0, 6.0]),
+            ), // infinite
+        ];
+        for (a, b) in cases {
+            let system = System::new(a, b).unwrap();
+            let unique = matches!(system.solve(SOLVE_EPSILON), Solution::Unique(_));
+            let both = system.is_consistent(SOLVE_EPSILON)
+                && system.has_at_most_one_solution(SOLVE_EPSILON);
+            assert_eq!(unique, both, "唯一必須 = 存在 ∧ 至多一個");
+        }
     }
 }
 
