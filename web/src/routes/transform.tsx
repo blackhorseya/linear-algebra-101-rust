@@ -2,6 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
+import {
+  TransformCanvas,
+  type Matrix2x2,
+  type Vec2,
+} from '../components/TransformCanvas'
 
 export const Route = createFileRoute('/transform')({
   component: TransformDemo,
@@ -16,18 +21,18 @@ function TransformDemo() {
     error,
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
-  // 2×2 變換矩陣 [[a,b],[c,d]] 與輸入點 (x,y)。預設是 90° 逆時針旋轉作用在 (1,1)
-  // ——(x,y) 都非零,改任何一個矩陣格子都看得到輸出變化。
-  const [m, setM] = useState({ a: 0, b: -1, c: 1, d: 0 })
-  const [p, setP] = useState({ x: 1, y: 1 })
+  // 單一真相:數字輸入框與 Canvas 共用這份 m / v(Canvas 全 controlled)。
+  // 預設 90° 逆時針旋轉作用在 (1,1)。
+  const [m, setM] = useState<Matrix2x2>({ a: 0, b: -1, c: 1, d: 0 })
+  const [v, setV] = useState<Vec2>({ x: 1, y: 1 })
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
 
   // 同步呼叫:2×2 乘法很便宜,不必再包一層 Query —— 計算全在 Rust 完成。
-  const [tx, ty] = linalg.transformPoint(m.a, m.b, m.c, m.d, p.x, p.y)
-  const isZero = p.x === 0 && p.y === 0
-  const parallel = linalg.areParallel(p.x, p.y, tx, ty)
+  const [tx, ty] = linalg.transformPoint(m.a, m.b, m.c, m.d, v.x, v.y)
+  const isZero = v.x === 0 && v.y === 0
+  const parallel = linalg.areParallel(v.x, v.y, tx, ty)
 
   return (
     <section className="space-y-8">
@@ -36,7 +41,25 @@ function TransformDemo() {
           2D 線性變換
         </h1>
         <p className="text-sm text-slate-400">
-          矩陣與向量運算全部由 Rust(WASM)計算,JS 只負責收輸入、顯示結果。
+          矩陣與向量運算全部由 Rust(WASM)計算,JS 只負責畫圖與互動。
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <TransformCanvas
+          linalg={linalg}
+          m={m}
+          v={v}
+          onChangeMatrix={setM}
+          onChangeV={setV}
+        />
+        <p className="text-xs text-slate-500">
+          拖
+          <span className="text-emerald-400"> î′(綠)</span>、
+          <span className="text-red-400">ĵ′(紅)</span> 端點即時改矩陣;拖
+          <span className="text-violet-400"> v(紫)</span> 看
+          <span className="text-amber-400"> A·v(琥珀)</span>。把 î′ 拖到與 ĵ′
+          共線會看到平面塌成一條線。
         </p>
       </div>
 
@@ -58,8 +81,8 @@ function TransformDemo() {
             輸入點 (x, y)
           </legend>
           <div className="flex gap-2">
-            <NumberField label="x" value={p.x} onChange={(x) => setP({ ...p, x })} />
-            <NumberField label="y" value={p.y} onChange={(y) => setP({ ...p, y })} />
+            <NumberField label="x" value={v.x} onChange={(x) => setV({ ...v, x })} />
+            <NumberField label="y" value={v.y} onChange={(y) => setV({ ...v, y })} />
           </div>
         </fieldset>
       </div>
@@ -73,11 +96,11 @@ function TransformDemo() {
         {/* 把矩陣乘法攤開:每一項都帶入實際數字,看得到哪個格子貢獻了多少。 */}
         <div className="space-y-1 border-t border-slate-800 pt-3 font-mono text-xs text-slate-500">
           <p>
-            x′ = a·x + b·y = {fmt(m.a)}·{fmt(p.x)} + {fmt(m.b)}·{fmt(p.y)} ={' '}
+            x′ = a·x + b·y = {fmt(m.a)}·{fmt(v.x)} + {fmt(m.b)}·{fmt(v.y)} ={' '}
             <span className="text-slate-300">{fmt(tx)}</span>
           </p>
           <p>
-            y′ = c·x + d·y = {fmt(m.c)}·{fmt(p.x)} + {fmt(m.d)}·{fmt(p.y)} ={' '}
+            y′ = c·x + d·y = {fmt(m.c)}·{fmt(v.x)} + {fmt(m.d)}·{fmt(v.y)} ={' '}
             <span className="text-slate-300">{fmt(ty)}</span>
           </p>
         </div>
