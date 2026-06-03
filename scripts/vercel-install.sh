@@ -15,6 +15,10 @@ export RUSTUP_HOME="${RUSTUP_HOME:-/rust}"
 rustup target add wasm32-unknown-unknown
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-# 前端依賴(Vercel build image 內建 corepack 提供 pnpm)。
+# 前端依賴:用 web/package.json 的 packageManager 欄位釘死的 pnpm 版本。
+# 不釘版本的話,Vercel 預設 pnpm 讀不懂 lockfileVersion 9.0,會「忽略 lockfile」
+# 再因 --frozen-lockfile 找不到可用 lockfile 而失敗。
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=0:headless 環境讓 corepack 直接下載、不卡互動提示。
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 corepack enable
 cd web && pnpm install --frozen-lockfile
