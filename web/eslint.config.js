@@ -6,8 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // routeTree.gen.ts 由 TanStack Router 自動產生,不檢查
-  globalIgnores(['dist', 'src/routeTree.gen.ts']),
+  // 自動產生物不檢查:routeTree.gen.ts(TanStack Router)、src/lib/wasm(wasm-pack)
+  globalIgnores(['dist', 'src/routeTree.gen.ts', 'src/lib/wasm']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

@@ -32,6 +32,12 @@ function RootLayout() {
             >
               首頁
             </Link>
+            <Link
+              to="/transform"
+              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
+            >
+              2D 變換
+            </Link>
           </div>
         </nav>
       </header>
