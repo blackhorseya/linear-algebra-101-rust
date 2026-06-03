@@ -33,6 +33,21 @@ function TransformDemo() {
   const isZero = v.x === 0 && v.y === 0
   const parallel = linalg.areParallel(v.x, v.y, tx, ty)
 
+  // 行列式 = 單位正方形像的有號面積(由 WASM 算)。
+  const det = linalg.determinant(m.a, m.b, m.c, m.d)
+  const detClass =
+    Math.abs(det) < 1e-9
+      ? 'text-red-400'
+      : det < 0
+        ? 'text-amber-400'
+        : 'text-emerald-400'
+  const detMeaning =
+    Math.abs(det) < 1e-9
+      ? 'det = 0 → 平面被壓扁成一條線,變換不可逆(沒有反矩陣)。'
+      : det < 0
+        ? `面積縮放 ${fmt(Math.abs(det))} 倍,且平面翻面(定向反轉)。`
+        : `面積縮放 ${fmt(det)} 倍,定向不變。`
+
   return (
     <section className="space-y-8">
       <div className="space-y-2">
@@ -103,6 +118,15 @@ function TransformDemo() {
             <span className="text-slate-300">{fmt(ty)}</span>
           </p>
         </div>
+        <Row label="行列式 det">
+          <span className={detClass}>{fmt(det)}</span>
+        </Row>
+        <p className="font-mono text-xs text-slate-500">
+          det = a·d − b·c = {fmt(m.a)}·{fmt(m.d)} − {fmt(m.b)}·{fmt(m.c)} ={' '}
+          <span className="text-slate-300">{fmt(det)}</span>
+        </p>
+        <p className="text-sm text-slate-400">{detMeaning}</p>
+
         <Row label="v 與 A·v 平行?">
           <span className={parallel ? 'text-emerald-400' : 'text-slate-400'}>
             {parallel ? '是' : '否'}

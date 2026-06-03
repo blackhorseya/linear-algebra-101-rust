@@ -38,7 +38,8 @@ const COLORS = {
   v: '#a78bfa', // violet-400
   av: '#fbbf24', // amber-400
   eigen: '#34d399', // emerald 虛線(特徵方向)
-  square: 'rgba(167,139,250,0.10)', // violet 單位方格填色
+  squarePos: 'rgba(167,139,250,0.12)', // det>0:violet(定向不變)
+  squareNeg: 'rgba(251,191,36,0.12)', // det<0:amber(平面翻面)
 } as const
 
 function drawTransform(
@@ -62,13 +63,15 @@ function drawTransform(
   ctx.restore()
 
   // 單位方格的像(平行四邊形)。遠角 î'+ĵ' 由 WASM 取得,JS 不做加法。
+  // 面積 = |det|;det<0 代表翻面,用顏色區分(det 也由 WASM 算)。
   const iTip = S(m.a, m.c)
   const jTip = S(m.b, m.d)
   const farW = linalg.transformPoint(m.a, m.b, m.c, m.d, 1, 1)
   if ([m.a, m.c, m.b, m.d, farW[0], farW[1]].every(Number.isFinite)) {
     const far = S(farW[0], farW[1])
+    const det = linalg.determinant(m.a, m.b, m.c, m.d)
     ctx.save()
-    ctx.fillStyle = COLORS.square
+    ctx.fillStyle = det < 0 ? COLORS.squareNeg : COLORS.squarePos
     ctx.beginPath()
     ctx.moveTo(origin[0], origin[1])
     ctx.lineTo(iTip[0], iTip[1])
