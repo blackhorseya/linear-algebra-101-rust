@@ -100,6 +100,25 @@ pub fn rref_columns_are_distinct_standard_vectors(epsilon: f64, vectors: &[Vecto
     true
 }
 
+/// 回傳**第一個**是其前面各向量線性組合的向量 index —— Theorem 1.9 的建構式見證。清單
+/// 線性獨立時(沒有這種向量,含空集)回 `None`(對應 Go 的 `-1`,但用 `Option` 表達)。
+///
+/// Theorem 1.9 把相依拆成兩種情形 —— u₀=0,或某個 uᵢ(i≥1)是前驅 u₀…uᵢ₋₁ 的組合 ——
+/// 但**單一測試**就統一了它們:「uᵢ 在它前面那些向量的 span 裡嗎?」i=0 時那個 span 是空
+/// span {0},測試化為「u₀=0」,恰是 Theorem 1.9 的第一種情形,無需特判。這是冗餘的**由左
+/// 至右 / 序列**觀點,與 [`removable_columns`] 的全域 RREF 觀點不同 —— 但這裡回傳的 index
+/// 恰好是最小的自由行(見 law test)。
+pub fn first_dependent_index(epsilon: f64, vectors: &[Vector]) -> Option<usize> {
+    for (i, v) in vectors.iter().enumerate() {
+        // span{vectors[..i]} 是前驅張出的平直集;i=0 時是空 span {0},contains 自動化為
+        // 「v 是零向量」(u₀=0 情形),不必特判。contains 即「v 是前驅的線性組合」。
+        if Span::new(epsilon, vectors[..i].to_vec()).contains(v) {
+            return Some(i);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +268,38 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn first_dependent_index_known_cases() {
+        // 釘住 Theorem 1.9 的建構式見證,含**由左至右**語意:回傳第一個落在前驅 span 裡的
+        // 向量,且 u₀=0 在 index 0 回報、無需特判。None 表獨立。
+        let cases: Vec<(Vec<Vector>, Option<usize>)> = vec![
+            (vec![], None),                                     // 空集獨立
+            (vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])], None), // 獨立軸:無相依 index
+            // u₀=0 是 Theorem 1.9 的第一種情形 —— 在 index 0 回報
+            (vec![v(vec![0.0, 0.0]), v(vec![1.0, 0.0])], Some(0)),
+            // u₁=2·u₀ 是第一個落在前驅 span 裡的:index 1,不是 2
+            (
+                vec![v(vec![1.0, 0.0]), v(vec![2.0, 0.0]), v(vec![0.0, 1.0])],
+                Some(1),
+            ),
+            // (1,1) 需要**兩個**前驅;較早的都不冗餘,故見證是最後一個 → index 2
+            (
+                vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0]), v(vec![1.0, 1.0])],
+                Some(2),
+            ),
+            // 重複向量在它第二次出現處相依 → index 1
+            (vec![v(vec![1.0, 0.0]), v(vec![1.0, 0.0])], Some(1)),
+            (vec![v(vec![3.0, 4.0])], None), // 單一非零向量獨立
+        ];
+        for (vectors, want) in cases {
+            assert_eq!(
+                first_dependent_index(INDEP_EPS, &vectors),
+                want,
+                "first_dependent_index 不符: {vectors:?}"
+            );
+        }
+    }
 }
 
 /// Theorem 1.7 的 property test —— 把定理變成跨隨機矩陣的可執行斷言。四個等價條件各自
@@ -390,6 +441,24 @@ mod laws {
                     "相依卻在 b=0 報 at most one\n a={a:?}"
                 );
             }
+        }
+
+        /// Theorem 1.9 兩面:(1)「前驅 span 裡的第一個向量」存在 ⟺ 相依;(2) 該 index =
+        /// **最小自由行**。序列式 span-membership 走訪(`first_dependent_index`,建在 A·c=v
+        /// 一致性上)與一次性 RREF 自由行掃描(`removable_columns`)是兩條獨立路徑,而某行為
+        /// 自由 ⟺ 它落在前面各行的 span 裡 —— 故兩者的「第一個」相符。
+        #[test]
+        fn theorem_1_9_first_dependent_index(
+            vectors in (1usize..=4, 1usize..=5)
+                .prop_flat_map(|(rows, count)| prop::collection::vec(int_vector(rows), count)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let first = first_dependent_index(EPS, &vectors);
+            // (1) 見證存在 ⟺ 相依
+            prop_assert_eq!(first.is_some(), is_linearly_dependent(EPS, &vectors));
+            // (2) 見證 = 最小自由行(都沒有時兩邊皆 None)
+            let smallest_free = removable_columns(EPS, &vectors).into_iter().min();
+            prop_assert_eq!(first, smallest_free);
         }
     }
 }
