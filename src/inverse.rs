@@ -75,11 +75,13 @@ impl Matrix {
     /// `epsilon`:消去過程的判零門檻(同 [`rank`](Matrix::rank) /
     /// [`reduced_row_echelon_form`](Matrix::reduced_row_echelon_form))。
     pub fn is_invertible(&self, epsilon: f64) -> bool {
-        if self.rows() != self.cols() {
-            return false; // 非方陣直接回 false(可逆性未定義)
-        }
-        self.reduced_row_echelon_form(epsilon)
-            .equals(&Matrix::identity(self.rows()))
+        // 非方陣短路 false(可逆性未定義);方陣才走 IMT 條件 2:RREF = Iₙ。
+        // 消去後的「1」與「0」帶浮點殘差(pivot × 1/pivot ≠ 恰為 1.0),
+        // 必須用 approx_equals 而非精確 equals —— laws 的隨機矩陣會抓到差異。
+        self.is_square()
+            && self
+                .reduced_row_echelon_form(epsilon)
+                .approx_equals(&Matrix::identity(self.rows()), epsilon)
     }
 }
 
