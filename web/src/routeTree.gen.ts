@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
 import { Route as SpanRouteImport } from './routes/span'
+import { Route as InvertibilityRouteImport } from './routes/invertibility'
 import { Route as EliminationRouteImport } from './routes/elimination'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const TransformRoute = TransformRouteImport.update({
 const SpanRoute = SpanRouteImport.update({
   id: '/span',
   path: '/span',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvertibilityRoute = InvertibilityRouteImport.update({
+  id: '/invertibility',
+  path: '/invertibility',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EliminationRoute = EliminationRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
+  '/invertibility': typeof InvertibilityRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
+  '/invertibility': typeof InvertibilityRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
@@ -51,20 +59,28 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
+  '/invertibility': typeof InvertibilityRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/elimination' | '/span' | '/transform'
+  fullPaths: '/' | '/elimination' | '/invertibility' | '/span' | '/transform'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/elimination' | '/span' | '/transform'
-  id: '__root__' | '/' | '/elimination' | '/span' | '/transform'
+  to: '/' | '/elimination' | '/invertibility' | '/span' | '/transform'
+  id:
+    | '__root__'
+    | '/'
+    | '/elimination'
+    | '/invertibility'
+    | '/span'
+    | '/transform'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EliminationRoute: typeof EliminationRoute
+  InvertibilityRoute: typeof InvertibilityRoute
   SpanRoute: typeof SpanRoute
   TransformRoute: typeof TransformRoute
 }
@@ -83,6 +99,13 @@ declare module '@tanstack/react-router' {
       path: '/span'
       fullPath: '/span'
       preLoaderRoute: typeof SpanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invertibility': {
+      id: '/invertibility'
+      path: '/invertibility'
+      fullPath: '/invertibility'
+      preLoaderRoute: typeof InvertibilityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/elimination': {
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EliminationRoute: EliminationRoute,
+  InvertibilityRoute: InvertibilityRoute,
   SpanRoute: SpanRoute,
   TransformRoute: TransformRoute,
 }

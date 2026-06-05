@@ -3,6 +3,7 @@ import init, {
   are_parallel,
   determinant,
   eliminate,
+  invert_trace,
 } from "./wasm/linear_algebra_101.js";
 // `--target web` 的 glue 不會自動 import .wasm,要把它的 URL 交給 init()。
 // `?url` 讓 Vite 把這顆 wasm 當資產處理並回傳可 fetch 的網址(dev / build 皆然)。
@@ -45,6 +46,40 @@ export interface EliminationTraceJS {
   freeColumns: number[];
 }
 
+/** 求逆 trace 每一步施作的 ERO 種類("initial" = 第 0 步,尚未施作)。 */
+export type EroKind = "initial" | "swap" | "scale" | "addScaled";
+
+/** 求逆(Gauss-Jordan 累乘基本矩陣)的單一步驟(plain-JS)。 */
+export interface InverseStepJS {
+  /** 人類可讀的操作描述,如 "R2 ← R2 − 2·R1"。 */
+  description: string;
+  /** 這一步施作的 ERO 種類(前端據此映射幾何名稱:鏡射 / 伸縮 / 剪切)。 */
+  ero: EroKind;
+  /** 消去中的矩陣(這一步做完之後;從 A 出發,終態 = RREF(A))。 */
+  working: number[][];
+  /** 累積 P = Eₖ⋯E₁(從 Iₙ 出發,可逆時終態 = A⁻¹)。 */
+  p: number[][];
+  /** 這一步施作的基本矩陣 Eₖ(initial 步 = Iₙ)。 */
+  e: number[][];
+  /** 當前 pivot 列(-1 = 無)。 */
+  pivotRow: number;
+  /** 當前 pivot 行(-1 = 無)。 */
+  pivotCol: number;
+  /** 這一步被改動的列(高亮用)。 */
+  changedRows: number[];
+}
+
+/** 一趟完整求逆的 trace(plain-JS,不持有任何 WASM 指標)。 */
+export interface InverseTraceJS {
+  steps: InverseStepJS[];
+  n: number;
+  /** 以下 IMT 旗標各自由 Rust 端獨立計算,非彼此推導(等價是定理,不是實作)。 */
+  invertible: boolean;
+  rank: number;
+  nullity: number;
+  colsIndependent: boolean;
+}
+
 // WASM 端的 u8 編碼 → 字串(index 即編碼值,順序必須與 wasm.rs 一致)。
 const PHASE_NAMES: ElimPhase[] = ["initial", "forward", "backward"];
 const SOLUTION_NAMES: SolutionKind[] = [
@@ -53,6 +88,7 @@ const SOLUTION_NAMES: SolutionKind[] = [
   "Infinite",
   "Inconsistent",
 ];
+const ERO_NAMES: EroKind[] = ["initial", "swap", "scale", "addScaled"];
 
 /** 初始化後可用的線代運算(全部在 Rust 算,JS 只是轉呼叫)。 */
 export interface Linalg {
@@ -79,6 +115,11 @@ export interface Linalg {
     cols: number,
     augCol: number,
   ) => EliminationTraceJS;
+  /**
+   * 反矩陣(Gauss-Jordan 累乘基本矩陣)逐步 trace。`data` 為 row-major flatten
+   * 的 n×n 矩陣。可逆時終態 P = A⁻¹;奇異時終態 working = RREF(A)(Theorem 2.3)。
+   */
+  invertTrace: (data: number[], n: number) => InverseTraceJS;
 }
 
 /**
@@ -147,6 +188,68 @@ function runEliminate(
   }
 }
 
+/**
+ * 同 `runEliminate` 的 SoA 縫合 + `free()` 模式,差別在每步有三份 n×n 快照
+ * (working / 累積 P / 當步 Eₖ),各自從串接的 typed array 切片 reshape。
+ */
+function runInvertTrace(data: number[], n: number): InverseTraceJS {
+  const trace = invert_trace(Float64Array.from(data), n);
+  try {
+    const stepCount = trace.step_count;
+    const cells = n * n;
+
+    // 各 SoA 陣列各跨界一次。
+    const workingSnaps = trace.working_snapshots();
+    const pSnaps = trace.p_snapshots();
+    const eSnaps = trace.e_snapshots();
+    const descriptions = trace.descriptions();
+    const eros = trace.eros();
+    const pivotRows = trace.pivot_rows();
+    const pivotCols = trace.pivot_cols();
+    const changedFlat = trace.changed_rows_flat();
+    const changedOffsets = trace.changed_rows_offsets();
+
+    // 從串接快照切出第 i 步的 n×n 矩陣。
+    const sliceMatrix = (snaps: Float64Array, i: number): number[][] => {
+      const base = i * cells;
+      const matrix: number[][] = [];
+      for (let r = 0; r < n; r++) {
+        const start = base + r * n;
+        matrix.push(Array.from(snaps.subarray(start, start + n)));
+      }
+      return matrix;
+    };
+
+    const steps: InverseStepJS[] = [];
+    for (let i = 0; i < stepCount; i++) {
+      steps.push({
+        description: descriptions[i],
+        ero: ERO_NAMES[eros[i]],
+        working: sliceMatrix(workingSnaps, i),
+        p: sliceMatrix(pSnaps, i),
+        e: sliceMatrix(eSnaps, i),
+        pivotRow: pivotRows[i],
+        pivotCol: pivotCols[i],
+        // CSR:第 i 步的 changed rows = flat[offsets[i] .. offsets[i+1]]
+        changedRows: Array.from(
+          changedFlat.subarray(changedOffsets[i], changedOffsets[i + 1]),
+        ),
+      });
+    }
+
+    return {
+      steps,
+      n: trace.n,
+      invertible: trace.invertible,
+      rank: trace.rank,
+      nullity: trace.nullity,
+      colsIndependent: trace.cols_independent,
+    };
+  } finally {
+    trace.free(); // 同上:抽完即釋放
+  }
+}
+
 // 模組層級 memoize:init 是非同步且只該跑一次。即使多個元件同時呼叫,
 // 也共用同一個 Promise(配合 Query 的 staleTime: Infinity 是雙重保險)。
 let instance: Promise<Linalg> | null = null;
@@ -160,6 +263,7 @@ export function loadLinalg(): Promise<Linalg> {
     areParallel: are_parallel,
     determinant,
     eliminate: runEliminate,
+    invertTrace: runInvertTrace,
   }));
   return instance;
 }

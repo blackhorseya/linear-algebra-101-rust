@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import type { ElimPhase, EliminationStepJS, SolutionKind } from '../lib/linalg'
+import { PlaybackControls } from '../components/Playback'
 
 export const Route = createFileRoute('/elimination')({
   component: EliminationDemo,
@@ -310,73 +311,6 @@ function EditableGrid({
         )),
       )}
     </div>
-  )
-}
-
-/** 進度條 + 上一步 / 下一步 / 首尾跳轉。 */
-function PlaybackControls({
-  step,
-  count,
-  onChange,
-}: {
-  step: number
-  count: number
-  onChange: (step: number) => void
-}) {
-  return (
-    <div className="space-y-3 border-t border-slate-800 pt-4">
-      <input
-        type="range"
-        min={0}
-        max={Math.max(0, count - 1)}
-        value={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-violet-500"
-      />
-      <div className="flex items-center justify-center gap-2">
-        <NavButton onClick={() => onChange(0)} disabled={step === 0}>
-          ⏮ 最前
-        </NavButton>
-        <NavButton
-          onClick={() => onChange(Math.max(0, step - 1))}
-          disabled={step === 0}
-        >
-          ← 上一步
-        </NavButton>
-        <NavButton
-          onClick={() => onChange(Math.min(count - 1, step + 1))}
-          disabled={step >= count - 1}
-        >
-          下一步 →
-        </NavButton>
-        <NavButton
-          onClick={() => onChange(count - 1)}
-          disabled={step >= count - 1}
-        >
-          最後 ⏭
-        </NavButton>
-      </div>
-    </div>
-  )
-}
-
-function NavButton({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 transition hover:border-violet-500 hover:text-violet-300 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
   )
 }
 

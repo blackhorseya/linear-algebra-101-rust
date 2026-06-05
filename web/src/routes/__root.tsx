@@ -50,6 +50,12 @@ function RootLayout() {
             >
               高斯消去
             </Link>
+            <Link
+              to="/invertibility"
+              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
+            >
+              可逆矩陣
+            </Link>
           </div>
         </nav>
       </header>
