@@ -6,6 +6,7 @@
 
 pub mod basis;
 pub mod coordinates;
+pub mod diagonal;
 pub mod elimination;
 pub mod error;
 pub mod independence;
@@ -19,6 +20,7 @@ pub mod wasm;
 
 pub use basis::{is_basis, is_standard_basis};
 pub use coordinates::{coordinates, from_coordinates};
+pub use diagonal::DiagonalMatrix;
 pub use error::LinAlgError;
 pub use independence::{
     is_linearly_dependent, is_linearly_independent, redundancy_count, removable_columns,

@@ -28,6 +28,7 @@
 - [x] 矩陣–向量乘積 `multiply_vector`(A·v,column view 的核心)、column / row 抽取、stochastic 判定 `is_stochastic`
 - [x] 基本列運算 EROs(`swap_rows` / `scale_row` / `add_scaled_row`)、列階梯形判定 `is_row_echelon_form` / `is_reduced_row_echelon_form`
 - [x] 矩陣乘法 `multiply`(matrix × matrix,線性映射的合成)、維度相容述詞 `can_multiply`、方陣冪 `power`(Aᵏ,A⁰ = I)
+- [x] 對角矩陣 `DiagonalMatrix`(parse-don't-validate 的 newtype,O(n) 乘法,只存對角線)
 
 ### 3. 向量空間:span、線性獨立、basis、座標
 - [x] span:`Span`、`spans_all`、`on_line` / `on_plane` / `affine_span`
@@ -92,7 +93,8 @@ cd web && pnpm install && pnpm dev
 │   ├── lib.rs          # crate root,re-export 各模組公開 API
 │   ├── error.rs        # 共用錯誤型別 LinAlgError
 │   ├── vector.rs       # Vector:加法、純量乘法、線性組合、標準基底、平行
-│   ├── matrix.rs       # Matrix:加法 / 純量乘、轉置、identity、A·v、EROs、echelon 判定
+│   ├── matrix.rs       # Matrix:加法 / 純量乘、轉置、identity、A·v、乘法 / 冪、EROs、echelon 判定
+│   ├── diagonal.rs     # DiagonalMatrix:對角陣 newtype,O(n) 乘法
 │   ├── span.rs         # span 與線性組合見證
 │   ├── independence.rs # 線性獨立 / 冗餘 / 可移除行
 │   ├── basis.rs        # basis 判定

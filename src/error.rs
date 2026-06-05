@@ -47,6 +47,10 @@ pub enum LinAlgError {
     /// 呼叫端與訊息都看得到差在哪。未來的 `determinant` / `inverse` 同樣適用。
     /// (見 [`Matrix::power`](crate::Matrix::power)。)
     NotSquare { rows: usize, cols: usize },
+    /// 矩陣的主對角線以外有非零元素(容差內),不是對角矩陣 —— 無法享受對角結構
+    /// 的 O(n) 運算。(見
+    /// [`DiagonalMatrix::from_matrix`](crate::DiagonalMatrix::from_matrix)。)
+    NotDiagonal,
 }
 
 impl fmt::Display for LinAlgError {
@@ -92,6 +96,12 @@ impl fmt::Display for LinAlgError {
                 write!(
                     f,
                     "not square: matrix is {rows}×{cols}, operation requires rows == cols"
+                )
+            }
+            LinAlgError::NotDiagonal => {
+                write!(
+                    f,
+                    "not diagonal: matrix has non-zero entries off the main diagonal"
                 )
             }
         }
@@ -173,6 +183,14 @@ mod tests {
         assert_eq!(
             LinAlgError::NotABasis { dim: 2 }.to_string(),
             "not a basis: given vectors are not a basis of ℝ^2, so coordinates are undefined"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_not_diagonal() {
+        assert_eq!(
+            LinAlgError::NotDiagonal.to_string(),
+            "not diagonal: matrix has non-zero entries off the main diagonal"
         );
     }
 
