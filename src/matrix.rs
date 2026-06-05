@@ -192,6 +192,41 @@ impl Matrix {
         Ok(Vector::from_vec(data))
     }
 
+    /// 矩陣乘法 `self · other`:m×n 乘 n×p,得 m×p(內維 n 相消)。
+    ///
+    /// 兩種等價視角,實作擇一即可:
+    /// - **row view**:結果 `(i, j)` = `self` 第 i 列與 `other` 第 j 行的
+    ///   dot product(Σₖ aᵢₖ·bₖⱼ)—— 三層迴圈的教科書定義。
+    /// - **column view**:結果第 j 個 column = `self ·`(`other` 第 j 個 column)
+    ///   —— 把 [`multiply_vector`](Matrix::multiply_vector) 逐 column 套用。這揭示
+    ///   乘法的本質是**線性映射的合成**:`(AB)v = A(Bv)`(見 laws
+    ///   `multiply_is_composition_of_actions`)。
+    ///
+    /// 維度守門重用 [`can_multiply`](Matrix::can_multiply) 作為單一真相;不合則回
+    /// [`LinAlgError::DimensionMismatch`]。注意乘法**不可交換**:`AB` 與 `BA` 連
+    /// 維度都可能不同(2×1 · 1×2 = 2×2 外積,反向是 1×1 內積),值也通常不同。
+    pub fn multiply(&self, other: &Matrix) -> Result<Matrix, LinAlgError> {
+        if !self.can_multiply(other) {
+            return Err(LinAlgError::DimensionMismatch);
+        }
+        // row view:內維 k 不手動索引 —— self 第 i 列 zip other 的各列,自動對齊
+        // aᵢₖ 與 B 的第 k 列(同 multiply_vector 裡 row.iter().zip(x) 的形狀)。
+        let data = (0..self.rows())
+            .map(|i| {
+                (0..other.cols())
+                    .map(|j| {
+                        self.data[i]
+                            .iter()
+                            .zip(&other.data)
+                            .map(|(&a, row_b)| a * row_b[j])
+                            .sum()
+                    })
+                    .collect::<Vec<f64>>()
+            })
+            .collect::<Vec<Vec<f64>>>();
+        Ok(Matrix { data })
+    }
+
     /// 取出第 `j` 個 column 當作 column [`Vector`] ∈ Rʳᵒʷˢ。
     ///
     /// 這把 column view 從隱喻變成第一級操作。代數上,column 抽取就是恆等式
@@ -674,6 +709,71 @@ mod tests {
             .expect("row view 對 m×0 應回零向量而非 Err");
         assert_eq!(got.rows(), 2, "結果維度應為列數 2");
         assert!(got.is_zero());
+    }
+
+    #[test]
+    fn multiply_computes_product() {
+        // 2×3 · 3×2 → 2×2:result[i][j] = self 第 i 列 · other 第 j 行
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        let b = matrix_from(vec![vec![7.0, 8.0], vec![9.0, 10.0], vec![11.0, 12.0]]);
+        let ab = a.multiply(&b).expect("2×3 · 3×2 應可乘");
+        assert_eq!(ab.data, vec![vec![58.0, 64.0], vec![139.0, 154.0]]);
+
+        // 方陣 2×2:[1·5+2·7, 1·6+2·8; 3·5+4·7, 3·6+4·8]
+        let c = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let d = matrix_from(vec![vec![5.0, 6.0], vec![7.0, 8.0]]);
+        assert_eq!(
+            c.multiply(&d).unwrap().data,
+            vec![vec![19.0, 22.0], vec![43.0, 50.0]]
+        );
+    }
+
+    #[test]
+    fn multiply_result_is_outer_dimensions() {
+        // 外維決定結果形狀:m×n · n×p → m×p。極端對比:
+        // column(2×1)· row(1×2)外積撐成 2×2;反向 row · column 內積縮成 1×1。
+        let col = matrix_from(vec![vec![1.0], vec![2.0]]); // 2×1
+        let row = matrix_from(vec![vec![3.0, 4.0]]); // 1×2
+
+        let outer = col.multiply(&row).unwrap();
+        assert_eq!((outer.rows(), outer.cols()), (2, 2));
+        assert_eq!(outer.data, vec![vec![3.0, 4.0], vec![6.0, 8.0]]);
+
+        let inner = row.multiply(&col).unwrap();
+        assert_eq!((inner.rows(), inner.cols()), (1, 1));
+        assert_eq!(inner.data, vec![vec![11.0]]); // 3·1 + 4·2
+    }
+
+    #[test]
+    fn multiply_rejects_dimension_mismatch() {
+        // 2×3 · 2×3:內維 3 ≠ 2 —— can_multiply 說不行,multiply 就必須回 Err。
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        let b = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert!(!a.can_multiply(&b), "前提:can_multiply 應為 false");
+        assert_eq!(a.multiply(&b).unwrap_err(), LinAlgError::DimensionMismatch);
+    }
+
+    #[test]
+    fn multiply_is_not_commutative() {
+        // 置換矩陣 P 左乘換「列」、右乘換「行」—— 同一對矩陣,兩個方向結果不同。
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let p = matrix_from(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
+        let ap = a.multiply(&p).unwrap(); // A 的兩行互換
+        let pa = p.multiply(&a).unwrap(); // A 的兩列互換
+        assert_eq!(ap.data, vec![vec![2.0, 1.0], vec![4.0, 3.0]]);
+        assert_eq!(pa.data, vec![vec![3.0, 4.0], vec![1.0, 2.0]]);
+        assert!(!ap.equals(&pa), "AB ≠ BA:乘法不可交換");
+    }
+
+    #[test]
+    fn multiply_on_degenerate_inner_dimension() {
+        // 內維 0:每個元素都是空和 = 0,結果是 m×p 零矩陣。
+        // 2×0 · 0×0(導出表示法下「0×4」讀作 0×0)→ 2×0。
+        let a = Matrix::new(2, 0);
+        let b = Matrix::new(0, 4);
+        let got = a.multiply(&b).expect("內維 0 = 0,應可乘");
+        assert_eq!((got.rows(), got.cols()), (2, 0));
+        assert!(got.is_zero(), "空和應給零矩陣");
     }
 
     #[test]
@@ -1244,6 +1344,76 @@ mod laws {
                 a.is_square(),
                 "A·A 可乘 ⟺ A 為方陣,但 {}×{} 違反", m, n
             );
+        }
+
+        // ===== 矩陣乘法 —— 定義律與代數律 =====
+        // 全部刻意用非方陣鏈 2×3 · 3×4(· 4×2):方陣下 i/j/k 寫反也常碰巧過,
+        // 只有不對稱形狀才會真正考驗 row/column/內維三個索引各就各位。整數精確。
+
+        // 【定義律】(AB)v = A(Bv) —— 乘法就是線性映射的合成:「先施 B 再施 A」的
+        // 複合效果,恰好被乘積矩陣 AB 一次做完。column view 是它的 v = eⱼ 特例
+        // (兩邊都是「AB 的第 j 個 column = A·(B 的第 j 個 column)」)。
+        #[test]
+        fn multiply_is_composition_of_actions(
+            a in int_matrix(2, 3),
+            b in int_matrix(3, 4),
+            v in int_vector(4),
+        ) {
+            let ab_v = a.multiply(&b).unwrap().multiply_vector(&v).unwrap(); // (AB)v
+            let a_bv = a.multiply_vector(&b.multiply_vector(&v).unwrap()).unwrap(); // A(Bv)
+            prop_assert!(ab_v.equals(&a_bv), "(AB)v != A(Bv)\n A={a:?}\n B={b:?}\n v={v:?}");
+        }
+
+        // (AB)C = A(BC) —— 結合律(函數合成天生結合,乘法繼承這點)。
+        #[test]
+        fn multiply_associative(
+            a in int_matrix(2, 3),
+            b in int_matrix(3, 4),
+            c in int_matrix(4, 2),
+        ) {
+            let left = a.multiply(&b).unwrap().multiply(&c).unwrap();
+            let right = a.multiply(&b.multiply(&c).unwrap()).unwrap();
+            prop_assert!(left.equals(&right), "(AB)C != A(BC)\n A={a:?}\n B={b:?}\n C={c:?}");
+        }
+
+        // Iₘ·A = A·Iₙ = A —— 乘法單位元。非方陣下左右單位元「尺寸不同」(I₂ vs I₃),
+        // 這是 identity_times_vector_is_identity(I·x = x)的矩陣版。
+        #[test]
+        fn multiply_identity_neutral(a in int_matrix(2, 3)) {
+            let left = Matrix::identity(2).multiply(&a).unwrap();
+            let right = a.multiply(&Matrix::identity(3)).unwrap();
+            prop_assert!(left.equals(&a), "I₂·A != A\n A={a:?}");
+            prop_assert!(right.equals(&a), "A·I₃ != A\n A={a:?}");
+        }
+
+        // (AB)ᵀ = BᵀAᵀ —— can_multiply_transpose_duality 那條「維度影子」的本尊,
+        // 升級成值層級恆等式。
+        #[test]
+        fn transpose_of_product(a in int_matrix(2, 3), b in int_matrix(3, 4)) {
+            let left = a.multiply(&b).unwrap().transpose();
+            let right = b.transpose().multiply(&a.transpose()).unwrap();
+            prop_assert!(left.equals(&right), "(AB)ᵀ != BᵀAᵀ\n A={a:?}\n B={b:?}");
+        }
+
+        // 守門一致性:multiply 成功 ⟺ can_multiply;失敗時錯誤必為 DimensionMismatch,
+        // 成功時結果形狀必為外維 m×q。隨機化形狀(值無關緊要,零矩陣當載體)。
+        #[test]
+        fn multiply_ok_iff_can_multiply(
+            m in 1usize..=5, n in 1usize..=5,
+            p in 1usize..=5, q in 1usize..=5,
+        ) {
+            let a = Matrix::new(m, n);
+            let b = Matrix::new(p, q);
+            match a.multiply(&b) {
+                Ok(ab) => {
+                    prop_assert!(a.can_multiply(&b), "multiply Ok 但 can_multiply false");
+                    prop_assert_eq!((ab.rows(), ab.cols()), (m, q), "結果形狀應為外維 m×q");
+                }
+                Err(e) => {
+                    prop_assert!(!a.can_multiply(&b), "multiply Err 但 can_multiply true");
+                    prop_assert_eq!(e, LinAlgError::DimensionMismatch);
+                }
+            }
         }
 
         // ===== Elementary row operations 的可逆性 =====

@@ -27,7 +27,7 @@
 - [x] 建構子 `new` / `from_rows`、加法 / 純量乘法、轉置 `transpose`、單位矩陣 `identity`
 - [x] 矩陣–向量乘積 `multiply_vector`(A·v,column view 的核心)、column / row 抽取、stochastic 判定 `is_stochastic`
 - [x] 基本列運算 EROs(`swap_rows` / `scale_row` / `add_scaled_row`)、列階梯形判定 `is_row_echelon_form` / `is_reduced_row_echelon_form`
-- [ ] 矩陣乘法 `mul`(matrix × matrix)
+- [x] 矩陣乘法 `multiply`(matrix × matrix,線性映射的合成)、維度相容述詞 `can_multiply`
 
 ### 3. 向量空間:span、線性獨立、basis、座標
 - [x] span:`Span`、`spans_all`、`on_line` / `on_plane` / `affine_span`
