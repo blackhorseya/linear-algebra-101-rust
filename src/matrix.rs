@@ -118,6 +118,24 @@ impl Matrix {
         true
     }
 
+    /// 維度相容性檢查:`self` 能否**左乘** `other`,即乘積 `self · other` 是否有定義。
+    ///
+    /// 定義:m×n 矩陣只能乘 n×p 矩陣 —— **左矩陣的行數(cols)必須等於右矩陣的
+    /// 列數(rows)**,內維相消、結果為 m×p。這是實作矩陣乘法前的必要防錯機制:
+    /// 之後的 `multiply` 會以此作為維度守門的單一真相,不通過就回
+    /// [`LinAlgError::DimensionMismatch`]。
+    ///
+    /// 回 `bool` 而非 `Result`:它是與 [`is_square`](Matrix::is_square) 同家族的
+    /// **述詞(predicate)**,只回答「可不可以」;真正動手算的 `multiply` 才把
+    /// 失敗升級成 `Err`。另外注意它**不對稱**:`a.can_multiply(&b)` 成立不代表
+    /// `b.can_multiply(&a)` 成立 —— 矩陣乘法在維度層級就已不可交換。
+    ///
+    /// [`multiply_vector`](Matrix::multiply_vector) 的守門(`cols == v.rows()`)
+    /// 正是本檢查在 p = 1(向量視為 n×1 矩陣)的特例。
+    pub fn can_multiply(&self, other: &Matrix) -> bool {
+        self.cols() == other.rows()
+    }
+
     /// 逐元素相加,回傳新矩陣。
     ///
     /// 維度不合時回傳 `Err(LinAlgError::DimensionMismatch)` —— 把「這個運算可能
@@ -492,6 +510,49 @@ mod tests {
             row_stochastic.transpose().is_stochastic(1e-9),
             "其轉置才是 column-stochastic"
         );
+    }
+
+    #[test]
+    fn can_multiply_requires_inner_dimensions_to_match() {
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3
+
+        // 2×3 · 3×2:內維 3 = 3 → 可乘(結果會是 2×2)
+        let b = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]); // 3×2
+        assert!(a.can_multiply(&b), "2×3 · 3×2 應可乘");
+
+        // 2×3 · 2×3:內維 3 ≠ 2 → 不可乘(同形狀不代表可乘!)
+        let c = matrix_from(vec![vec![7.0, 8.0, 9.0], vec![1.0, 2.0, 3.0]]); // 2×3
+        assert!(!a.can_multiply(&c), "2×3 · 2×3 不可乘(3 ≠ 2)");
+
+        // 同尺寸方陣永遠可乘(n = n)
+        assert!(Matrix::identity(3).can_multiply(&Matrix::identity(3)));
+    }
+
+    #[test]
+    fn can_multiply_is_not_symmetric() {
+        // 維度相容性不對稱:AB 有定義不代表 BA 有定義。
+        // 2×3 · 3×4 → 可乘;反過來 3×4 · 2×3:內維 4 ≠ 2 → 不可乘。
+        let a = Matrix::new(2, 3);
+        let b = Matrix::new(3, 4);
+        assert!(a.can_multiply(&b), "2×3 · 3×4 應可乘");
+        assert!(!b.can_multiply(&a), "3×4 · 2×3 不可乘(4 ≠ 2)");
+
+        // 2×3 與 3×2 兩個方向都可乘 —— 但(將來的)乘積尺寸不同:2×2 vs 3×3。
+        let c = Matrix::new(3, 2);
+        assert!(a.can_multiply(&c), "2×3 · 3×2 應可乘");
+        assert!(c.can_multiply(&a), "3×2 · 2×3 應可乘");
+    }
+
+    #[test]
+    fn can_multiply_on_degenerate_shapes() {
+        // 導出表示法的取捨(同 rows_and_cols_report_dimensions):0 列矩陣沒有
+        // 第一列可量,cols 必為 0 —— 「0×3」實際讀作 0×0。
+        let a = Matrix::new(2, 0); // 2×0
+        let b = Matrix::new(0, 3); // 導出表示法下讀作 0×0
+        // 2×0 · 0×0:內維 0 = 0 → vacuously 可乘
+        assert!(a.can_multiply(&b), "2×0 · 0×0 內維皆 0,應可乘");
+        // 0×0 · 2×0:內維 0 ≠ 2 → 不可乘
+        assert!(!b.can_multiply(&a), "0×0 · 2×0 不可乘(0 ≠ 2)");
     }
 
     #[test]
@@ -1151,6 +1212,38 @@ mod laws {
             // 總機率質量守恆為 1
             let sum: f64 = pv.entries().iter().sum();
             prop_assert!((sum - 1.0).abs() <= 1e-9, "Σ(Pv) = {sum}, want 1\n P={p:?}\n v={v:?}");
+        }
+
+        // ===== 矩陣乘法的維度相容性 =====
+        // can_multiply 是純形狀述詞,值無關緊要 —— 直接用零矩陣 Matrix::new(m, n)
+        // 產生隨機「形狀」即可,不需要 int_matrix/real_matrix 的隨機元素。
+
+        // 轉置對偶:AB 可乘 ⟺ BᵀAᵀ 可乘 —— 這是恆等式 (AB)ᵀ = BᵀAᵀ 在維度層級
+        // 的影子(m×n · n×p 翻過去恰是 p×n · n×m,內維都是 n)。
+        #[test]
+        fn can_multiply_transpose_duality(
+            m in 1usize..=5, n in 1usize..=5,
+            p in 1usize..=5, q in 1usize..=5,
+        ) {
+            let a = Matrix::new(m, n);
+            let b = Matrix::new(p, q);
+            prop_assert_eq!(
+                a.can_multiply(&b),
+                b.transpose().can_multiply(&a.transpose()),
+                "AB 可乘 ⟺ BᵀAᵀ 可乘,但 {}×{} 與 {}×{} 違反", m, n, p, q
+            );
+        }
+
+        // 自乘判準:A·A 有定義 ⟺ A 是方陣 —— can_multiply 與 is_square 兩個述詞
+        // 必須在這點上一致(cols == rows 是同一個條件)。
+        #[test]
+        fn can_multiply_self_iff_square(m in 1usize..=5, n in 1usize..=5) {
+            let a = Matrix::new(m, n);
+            prop_assert_eq!(
+                a.can_multiply(&a),
+                a.is_square(),
+                "A·A 可乘 ⟺ A 為方陣,但 {}×{} 違反", m, n
+            );
         }
 
         // ===== Elementary row operations 的可逆性 =====
