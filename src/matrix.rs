@@ -227,6 +227,34 @@ impl Matrix {
         Ok(Matrix { data })
     }
 
+    /// 方陣的 k 次冪 `Aᵏ`:把 `self` 自乘 k 次;`k = 0` 回單位矩陣 Iₙ。
+    ///
+    /// **A⁰ = I 不是任意規定**:它是「空乘積 = 乘法單位元」的慣例(同 x⁰ = 1、
+    /// 空和 = 0),也讓指數律 `Aᵏ·Aˡ = Aᵏ⁺ˡ` 在 k 或 l 為 0 時依然成立(見 laws
+    /// `power_adds_exponents`)。
+    ///
+    /// 前置條件:只有方陣能自乘(laws `can_multiply_self_iff_square`:自乘可行
+    /// ⟺ 方陣),非方陣回 [`LinAlgError::NotSquare`] 帶實際形狀 —— 即使 `k = 0`
+    /// 也拒絕,因為「Iₙ 的 n」對非方陣無從定義。
+    ///
+    /// `k: usize` 把 Go 簽章的 `k int` 升級成編譯期保證:負冪(那需要反矩陣)
+    /// 根本無法表示 —— 同 `column(j: usize)` 排除負索引的手法。
+    pub fn power(&self, k: usize) -> Result<Matrix, LinAlgError> {
+        if !self.is_square() {
+            return Err(LinAlgError::NotSquare {
+                rows: self.rows(),
+                cols: self.cols(),
+            });
+        }
+        // 從 Iₙ 種子累乘:空迴圈(k = 0)天生回種子,A⁰ = I 不需特判。
+        // 守門後方陣自乘必可乘,用 expect 把不變式說死(而非 ? 假裝會失敗)。
+        let mut result = Matrix::identity(self.rows());
+        for _ in 0..k {
+            result = result.multiply(self).expect("方陣自乘不應失敗");
+        }
+        Ok(result)
+    }
+
     /// 取出第 `j` 個 column 當作 column [`Vector`] ∈ Rʳᵒʷˢ。
     ///
     /// 這把 column view 從隱喻變成第一級操作。代數上,column 抽取就是恆等式
@@ -774,6 +802,61 @@ mod tests {
         let got = a.multiply(&b).expect("內維 0 = 0,應可乘");
         assert_eq!((got.rows(), got.cols()), (2, 0));
         assert!(got.is_zero(), "空和應給零矩陣");
+    }
+
+    #[test]
+    fn power_zero_is_identity() {
+        // A⁰ = I:空乘積慣例。即使 A 是零矩陣也成立(矩陣版的「0⁰ = 1」)。
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert!(a.power(0).unwrap().equals(&Matrix::identity(2)));
+        assert!(
+            Matrix::new(3, 3)
+                .power(0)
+                .unwrap()
+                .equals(&Matrix::identity(3)),
+            "O⁰ 也是 I(空乘積與底數無關)"
+        );
+    }
+
+    #[test]
+    fn power_computes_repeated_product() {
+        // 剪切矩陣 [[1,1],[0,1]] 的冪有閉式:Aᵏ = [[1,k],[0,1]] —— 剪切量相加,
+        // 冪次直接讀得出幾何意義。
+        let shear = matrix_from(vec![vec![1.0, 1.0], vec![0.0, 1.0]]);
+        assert!(shear.power(1).unwrap().equals(&shear), "A¹ = A");
+        assert_eq!(
+            shear.power(2).unwrap().data,
+            vec![vec![1.0, 2.0], vec![0.0, 1.0]]
+        );
+        assert_eq!(
+            shear.power(3).unwrap().data,
+            vec![vec![1.0, 3.0], vec![0.0, 1.0]]
+        );
+
+        // 置換矩陣是 2-cycle:P² = I(換兩次 = 沒換)。
+        let p = matrix_from(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
+        assert!(p.power(2).unwrap().equals(&Matrix::identity(2)));
+
+        // 一般方陣:[[1,2],[3,4]]² = [[7,10],[15,22]]
+        let a = matrix_from(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert_eq!(
+            a.power(2).unwrap().data,
+            vec![vec![7.0, 10.0], vec![15.0, 22.0]]
+        );
+    }
+
+    #[test]
+    fn power_rejects_non_square() {
+        // 非方陣不能自乘;k = 0 也拒絕 —— 「Iₙ 的 n」對 2×3 無從定義。
+        // NotSquare 帶實際形狀,呼叫端看得到差在哪。
+        let a = matrix_from(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]); // 2×3
+        for k in [0usize, 1, 2] {
+            assert_eq!(
+                a.power(k).unwrap_err(),
+                LinAlgError::NotSquare { rows: 2, cols: 3 },
+                "k = {k} 也應拒絕非方陣"
+            );
+        }
     }
 
     #[test]
@@ -1414,6 +1497,29 @@ mod laws {
                     prop_assert_eq!(e, LinAlgError::DimensionMismatch);
                 }
             }
+        }
+
+        // ===== 矩陣冪 —— 指數律與 Markov chain =====
+
+        // Aᵏ·Aˡ = Aᵏ⁺ˡ —— 指數律。k 或 l 為 0 時退化成 I·Aˡ = Aˡ:正是 A⁰ = I
+        // 這個「空乘積」定義讓定律無破口的原因。整數精確:3×3、|元素| ≤ 10,
+        // 每多乘一次上界 ×30,k+l ≤ 6 時上界 10·30⁵ ≈ 2.4e8,遠在 f64 可精確
+        // 表示的整數範圍(2⁵³)內。
+        #[test]
+        fn power_adds_exponents(a in int_matrix(3, 3), k in 0usize..=3, l in 0usize..=3) {
+            let left = a.power(k).unwrap().multiply(&a.power(l).unwrap()).unwrap();
+            let right = a.power(k + l).unwrap();
+            prop_assert!(left.equals(&right), "Aᵏ·Aˡ != Aᵏ⁺ˡ\n A={a:?} k={k} l={l}");
+        }
+
+        // Markov chain 走 k 步:column-stochastic 的 Pᵏ 仍是 stochastic ——
+        // stochastic_preserves_probability(走一步保機率)的 k 步推廣,「轉移矩陣
+        // 的冪 = 多步轉移」就是矩陣冪的招牌應用。k = 0 時 I 也是 stochastic
+        // (每行恰是 eⱼ)。元素是正規化實數、誤差隨乘法累積 → 容差比較。
+        #[test]
+        fn power_of_stochastic_is_stochastic(p in stochastic_matrix(4), k in 0usize..=4) {
+            let pk = p.power(k).unwrap();
+            prop_assert!(pk.is_stochastic(1e-9), "Pᵏ 應仍為 stochastic\n P={p:?} k={k}");
         }
 
         // ===== Elementary row operations 的可逆性 =====

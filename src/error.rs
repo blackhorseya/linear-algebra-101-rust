@@ -42,6 +42,11 @@ pub enum LinAlgError {
     /// 維度 `dim`,呼叫端與訊息都看得到「不是哪個空間的基底」。(見
     /// [`coordinates`](crate::coordinates)。)
     NotABasis { dim: usize },
+    /// 運算要求方陣(rows == cols),卻收到 `rows`×`cols` 的非方陣 —— 例如矩陣冪
+    /// `Aᵏ`(自乘要求內外維一致;`k = 0` 時「Iₙ 的 n」也無從定義)。帶上實際形狀,
+    /// 呼叫端與訊息都看得到差在哪。未來的 `determinant` / `inverse` 同樣適用。
+    /// (見 [`Matrix::power`](crate::Matrix::power)。)
+    NotSquare { rows: usize, cols: usize },
 }
 
 impl fmt::Display for LinAlgError {
@@ -81,6 +86,12 @@ impl fmt::Display for LinAlgError {
                 write!(
                     f,
                     "not a basis: given vectors are not a basis of ℝ^{dim}, so coordinates are undefined"
+                )
+            }
+            LinAlgError::NotSquare { rows, cols } => {
+                write!(
+                    f,
+                    "not square: matrix is {rows}×{cols}, operation requires rows == cols"
                 )
             }
         }
@@ -162,6 +173,16 @@ mod tests {
         assert_eq!(
             LinAlgError::NotABasis { dim: 2 }.to_string(),
             "not a basis: given vectors are not a basis of ℝ^2, so coordinates are undefined"
+        );
+    }
+
+    /// 同 `IndexOutOfRange` / `NotABasis`:帶資料 variant,鎖措辭 + 驗 `rows`/`cols`
+    /// 真的被插進訊息 —— 要看得見「收到的形狀差在哪」。
+    #[test]
+    fn display_interpolates_not_square() {
+        assert_eq!(
+            LinAlgError::NotSquare { rows: 2, cols: 3 }.to_string(),
+            "not square: matrix is 2×3, operation requires rows == cols"
         );
     }
 
