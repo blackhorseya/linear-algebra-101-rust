@@ -308,7 +308,7 @@ mod tests {
 #[cfg(test)]
 mod laws {
     use super::*;
-    use crate::{Solution, System, Vector, is_linearly_independent};
+    use crate::{Solution, Span, System, Vector, is_linearly_independent};
     use proptest::prelude::*;
 
     /// 消去殘差的判零門檻(沿 elimination laws 的 `nullity_agrees_with_solve`:
@@ -336,6 +336,18 @@ mod laws {
     fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
         prop::collection::vec(-5i64..=5, n)
             .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 隨機 3×3 基本矩陣(三種任一;參數依建構合法,unwrap 安全)。
+    fn elementary3() -> impl Strategy<Value = Matrix> {
+        prop_oneof![
+            (0usize..3, 0usize..3).prop_map(|(i, j)| Matrix::elementary_swap(3, i, j).unwrap()),
+            (0usize..3, nonzero_int())
+                .prop_map(|(i, c)| Matrix::elementary_scale(3, i, c).unwrap()),
+            (0usize..3, 1usize..3, nonzero_int()).prop_map(|(dst, step, c)| {
+                Matrix::elementary_add_scaled(3, dst, (dst + step) % 3, c).unwrap()
+            }),
+        ]
     }
 
     proptest! {
@@ -508,6 +520,64 @@ mod laws {
                 a.is_invertible(EPS) && b.is_invertible(EPS),
                 product.is_invertible(EPS),
                 "都可逆 ⟺ 乘積可逆 斷裂\n a={:?}\n b={:?}", a, b
+            );
+        }
+
+        // IMT 條件 4:可逆 ⟺ 行向量生成 ℝⁿ(接上 span 模組 —— spans_all 一次
+        // 量完「所有 b」,是條件 5 的幾何面)。
+        #[test]
+        fn imt_columns_span_agrees(m in int_matrix(3, 3)) {
+            prop_assert_eq!(
+                m.is_invertible(EPS),
+                Span::from_columns(EPS, &m).spans_all(3),
+                "可逆 ⟺ 行向量生成 ℝ³ 斷裂\n m={:?}", m
+            );
+        }
+
+        // IMT 條件 5:可逆 ⟹ 任意 b 的 Ax = b 都一致。注意只驗 ⟹ 這個方向 ——
+        // 單一隨機 b 一致推不回可逆(奇異 A 也可能恰好讓 b 落在 column space);
+        // ⟸ 的完整版就是條件 4(spans_all 量化過所有 b)。
+        #[test]
+        fn imt_invertible_implies_every_b_consistent(m in int_matrix(3, 3), b in int_vector(3)) {
+            prop_assume!(m.is_invertible(EPS));
+            let s = System::new(m.clone(), b.clone()).unwrap();
+            prop_assert!(
+                s.is_consistent(EPS),
+                "可逆但 Ax = b 無解\n m={:?}\n b={:?}", m, b
+            );
+        }
+
+        // IMT 條件 8:齊次 Ax = 0 的解集分類與可逆對齊 —— 可逆 ⟺ 唯一解,
+        // 且那個唯一解必須恰是 0(齊次系統永遠一致:x = 0 一定是解)。
+        #[test]
+        fn imt_homogeneous_has_only_zero_solution(m in int_matrix(3, 3)) {
+            let zero = Vector::from_vec(vec![0.0; 3]);
+            match System::new(m.clone(), zero.clone()).unwrap().solve(EPS) {
+                Solution::Unique(x) => {
+                    prop_assert!(m.is_invertible(EPS), "唯一解但判定不可逆\n m={:?}", m);
+                    prop_assert!(x.approx_equals(&zero, EPS), "齊次唯一解應為 0,得到 {x:?}");
+                }
+                Solution::Infinite => {
+                    prop_assert!(!m.is_invertible(EPS), "無限多解但判定可逆\n m={:?}", m)
+                }
+                Solution::Inconsistent => prop_assert!(false, "齊次系統不可能無解\n m={m:?}"),
+            }
+        }
+
+        // IMT 條件 9 的「乘積 ⟹ 可逆」方向:隨機一串基本矩陣的乘積必可逆
+        // (空串 = Iₙ 也算)。反方向(可逆 ⟹ 可分解為 E 的乘積)是 inverse
+        // 演算法的構造性內容:它把 A⁻¹ 累成 P = Eₖ⋯E₁,而 A = (A⁻¹)⁻¹ =
+        // E₁⁻¹⋯Eₖ⁻¹,由「E 的逆是同型 E」每個因子仍是基本矩陣。
+        #[test]
+        fn imt_product_of_elementaries_is_invertible(
+            es in prop::collection::vec(elementary3(), 0..8),
+        ) {
+            let product = es
+                .iter()
+                .fold(Matrix::identity(3), |acc, e| e.multiply(&acc).unwrap());
+            prop_assert!(
+                product.is_invertible(EPS),
+                "基本矩陣的乘積應可逆\n es={:?}", es
             );
         }
 
