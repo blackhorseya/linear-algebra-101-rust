@@ -9,13 +9,21 @@
 use crate::Matrix;
 
 impl Matrix {
-    /// 私有輔助:**partial pivoting** —— 在 `start_row` 及以下,回 column `col` 量值最大的
+    /// crate 內部輔助:**partial pivoting** —— 在 `start_row` 及以下,回 column `col` 量值最大的
     /// 列索引;整段都在 `epsilon` 內(沒有可用 pivot)回 `None`。
     ///
     /// 挑「量值最大」是數值穩定性的關鍵:forward pass 會除以 pivot,小 pivot 會放大消去
     /// 因子與捨入誤差;挑最大的讓每個 factor 量值 ≤ 1。哨兵 `-1` → `Option<usize>`,
     /// 「沒有 pivot」與真實列索引在型別上分開。
-    fn pivot_row_below(&self, col: usize, start_row: usize, epsilon: f64) -> Option<usize> {
+    ///
+    /// `pub(crate)`:`inverse` 模組的 Gauss-Jordan 也要找 pivot,共用這顆積木
+    /// (同 `matrix::pivot_col` 的待遇),但**不**屬於公開 API。
+    pub(crate) fn pivot_row_below(
+        &self,
+        col: usize,
+        start_row: usize,
+        epsilon: f64,
+    ) -> Option<usize> {
         let mut best: Option<usize> = None;
         let mut best_mag = epsilon; // 量值要超過 epsilon 才算可用 pivot
         for r in start_row..self.rows() {

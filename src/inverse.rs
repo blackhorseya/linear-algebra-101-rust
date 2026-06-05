@@ -83,6 +83,70 @@ impl Matrix {
                 .reduced_row_echelon_form(epsilon)
                 .approx_equals(&Matrix::identity(self.rows()), epsilon)
     }
+
+    /// 反矩陣 A⁻¹:Gauss-Jordan 消去的同時**累乘基本矩陣**。
+    ///
+    /// 把 working copy 一路化到 Iₙ,每施一個 ERO 就同步 `p ← E·p`(E 由
+    /// `elementary_*` 建出、[`multiply`](Matrix::multiply) 累乘)。消去結束時
+    /// 累積的 **P = Eₖ⋯E₂E₁ 滿足 P·A = Iₙ,即 P = A⁻¹** —— Theorem 2.3
+    /// (PA = R,P 為基本矩陣之乘積)直接寫成演算法,順帶體現 IMT 條件 9
+    /// (可逆 ⟺ 可表示為基本矩陣的乘積:P 的每個因子都是 E,而 A = P⁻¹ 是
+    /// 它們逆的乘積)。每施一個 ERO 付一次 O(n³) 累乘、全程 O(n²) 個 ERO,
+    /// 整體 O(n⁵):學習庫選「看得見定理」而非效能(增廣 [A | Iₙ] 同步施作
+    /// ERO 的 O(n³) 標準做法是同一個算法的壓縮版)。
+    ///
+    /// 失敗模式兩層,各有精確錯誤(同 `DiagonalMatrix::from_matrix` 的分層):
+    /// - 非方陣:可逆性未定義 → [`LinAlgError::NotSquare`](帶實際形狀);
+    /// - 方陣但奇異:某 column 找不到 pivot(RREF 含零列)→
+    ///   [`LinAlgError::NotInvertible`]。
+    ///
+    /// `epsilon`:pivot 搜尋的判零門檻(同 [`rank`](Matrix::rank))。
+    pub fn inverse(&self, epsilon: f64) -> Result<Matrix, LinAlgError> {
+        if !self.is_square() {
+            return Err(LinAlgError::NotSquare {
+                rows: self.rows(),
+                cols: self.cols(),
+            });
+        }
+        let n = self.rows();
+        let mut working = self.clone();
+        let mut p = Matrix::identity(n);
+        // 單趟 Gauss-Jordan:pivot 釘在對角線 (col, col),該 column 上下全清。
+        // working 原地施作 ERO(O(n))—— Proposition 已在 laws 證明這與左乘 E
+        // 等價,定理證過一次就能放心走快路徑;p 才走字面的 E·p 累乘,
+        // 「P = Eₖ⋯E₁、新的 E 在左」的定理結構全保留在這條線。
+        // 守門後迴圈內的前置條件(索引 < n、|pivot| > ε、r ≠ col、同維方陣)
+        // 由迴圈結構保證 —— 用 expect 把不變式說死(同 power),不用 ? 假裝會失敗。
+        for col in 0..n {
+            // 對角線(含)以下找不到 pivot → RREF 必含零列 → 奇異。
+            let pivot_row = working
+                .pivot_row_below(col, col, epsilon)
+                .ok_or(LinAlgError::NotInvertible)?;
+            if pivot_row != col {
+                working.swap_rows(col, pivot_row).expect("索引皆 < n");
+                let e = Matrix::elementary_swap(n, col, pivot_row).expect("索引皆 < n");
+                p = e.multiply(&p).expect("同維方陣必可乘");
+            }
+
+            // pivot 量值 > ε 是 pivot_row_below 的後置條件 → 1/pivot 合法非零。
+            let pivot_val = working.row(col).expect("col < n")[col];
+            working.scale_row(col, 1.0 / pivot_val).expect("pivot 非零");
+            let e = Matrix::elementary_scale(n, col, 1.0 / pivot_val).expect("pivot 非零");
+            p = e.multiply(&p).expect("同維方陣必可乘");
+
+            for r in 0..n {
+                let coeff = working.row(r).expect("r < n")[col];
+                if r == col || coeff.abs() <= epsilon {
+                    continue; // pivot 自己,或已是零 —— 免施 no-op 的 E
+                }
+                working.add_scaled_row(r, col, -coeff).expect("r ≠ col"); // Rᵣ += −coeff·R_col
+                let e = Matrix::elementary_add_scaled(n, r, col, -coeff).expect("r ≠ col");
+                p = e.multiply(&p).expect("同維方陣必可乘");
+            }
+        }
+        // working 此刻已化到 Iₙ;P·A = Iₙ ⟹ p 即 A⁻¹。
+        Ok(p)
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +254,53 @@ mod tests {
             Matrix::elementary_add_scaled(2, 1, 1, 2.0).unwrap_err(),
             LinAlgError::SameRow
         );
+    }
+
+    #[test]
+    fn inverse_of_identity_is_identity() {
+        let inv = Matrix::identity(3).inverse(EPS).unwrap();
+        assert!(inv.approx_equals(&Matrix::identity(3), EPS), "inv={inv:?}");
+    }
+
+    /// 手算例:[[2,1],[1,1]]⁻¹ = [[1,−1],[−1,2]](det = 1,2×2 公式可口算驗證)。
+    #[test]
+    fn inverse_of_two_by_two_matches_hand_computation() {
+        let m = Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]);
+        let want = Matrix::from_rows(vec![vec![1.0, -1.0], vec![-1.0, 2.0]]);
+        let inv = m.inverse(EPS).unwrap();
+        assert!(inv.approx_equals(&want, EPS), "inv={inv:?}");
+    }
+
+    /// 1×1 邊界:[c]⁻¹ = [1/c] —— 反矩陣推廣了「倒數」。
+    #[test]
+    fn inverse_of_one_by_one_is_reciprocal() {
+        let inv = Matrix::from_rows(vec![vec![4.0]]).inverse(EPS).unwrap();
+        assert!(
+            inv.approx_equals(&Matrix::from_rows(vec![vec![0.25]]), EPS),
+            "inv={inv:?}"
+        );
+    }
+
+    /// 非方陣 → NotSquare 帶實際形狀(與 power 同款守門,失敗分層的第一層)。
+    #[test]
+    fn inverse_of_non_square_is_not_square_error() {
+        let m = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            m.inverse(EPS).unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    /// 方陣但奇異 → NotInvertible(失敗分層的第二層):零矩陣與 rank deficient
+    /// 各驗一例(筆記的兩種「不可逆情況」)。
+    #[test]
+    fn inverse_of_singular_is_not_invertible_error() {
+        assert_eq!(
+            Matrix::new(2, 2).inverse(EPS).unwrap_err(),
+            LinAlgError::NotInvertible
+        );
+        let m = Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]);
+        assert_eq!(m.inverse(EPS).unwrap_err(), LinAlgError::NotInvertible);
     }
 }
 
@@ -398,6 +509,105 @@ mod laws {
                 product.is_invertible(EPS),
                 "都可逆 ⟺ 乘積可逆 斷裂\n a={:?}\n b={:?}", a, b
             );
+        }
+
+        // ── 反矩陣系列:可逆的定義 + Theorem 2.2 代數性質 + 筆記 §6 應用。
+        //    可逆矩陣靠 prop_assume 篩(隨機整數方陣絕大多數可逆,拒絕率低);
+        //    連乘兩次以上 inverse 的等式殘差會放大,容差放寬到 1e-6。 ──
+
+        // 可逆的定義本身:A·A⁻¹ = A⁻¹·A = Iₙ(定義要求兩個方向)。
+        #[test]
+        fn inverse_satisfies_definition(m in int_matrix(3, 3)) {
+            prop_assume!(m.is_invertible(EPS));
+            let inv = m.inverse(EPS).unwrap();
+            let id = Matrix::identity(3);
+            prop_assert!(
+                m.multiply(&inv).unwrap().approx_equals(&id, EPS),
+                "A·A⁻¹ ≠ I\n m={:?}", m
+            );
+            prop_assert!(
+                inv.multiply(&m).unwrap().approx_equals(&id, EPS),
+                "A⁻¹·A ≠ I\n m={:?}", m
+            );
+        }
+
+        // inverse 與 is_invertible 一致:Ok ⟺ 可逆;方陣的失敗只會是 NotInvertible。
+        #[test]
+        fn inverse_agrees_with_is_invertible(m in int_matrix(3, 3)) {
+            match m.inverse(EPS) {
+                Ok(_) => prop_assert!(m.is_invertible(EPS), "Ok 但判定不可逆\n m={:?}", m),
+                Err(e) => {
+                    prop_assert!(!m.is_invertible(EPS), "Err 但判定可逆\n m={:?}", m);
+                    prop_assert_eq!(e, LinAlgError::NotInvertible, "m={:?}", m);
+                }
+            }
+        }
+
+        // Theorem 2.2-1 雙重逆:(A⁻¹)⁻¹ = A —— 「取逆」這個動作自己是對合的。
+        #[test]
+        fn double_inverse_returns_original(m in int_matrix(3, 3)) {
+            prop_assume!(m.is_invertible(EPS));
+            let back = m.inverse(EPS).unwrap().inverse(EPS).unwrap();
+            prop_assert!(back.approx_equals(&m, 1e-6), "(A⁻¹)⁻¹ ≠ A\n m={:?}", m);
+        }
+
+        // Theorem 2.2-2 Shoes-and-Socks:(AB)⁻¹ = B⁻¹A⁻¹ —— 順序必須顛倒
+        // (穿襪再穿鞋,脫的時候先脫鞋)。乘法不可交換在「逆」上的代價。
+        #[test]
+        fn shoes_and_socks(a in int_matrix(3, 3), b in int_matrix(3, 3)) {
+            prop_assume!(a.is_invertible(EPS) && b.is_invertible(EPS));
+            let lhs = a.multiply(&b).unwrap().inverse(EPS).unwrap();
+            let rhs = b.inverse(EPS).unwrap().multiply(&a.inverse(EPS).unwrap()).unwrap();
+            prop_assert!(
+                lhs.approx_equals(&rhs, 1e-6),
+                "(AB)⁻¹ ≠ B⁻¹A⁻¹\n a={:?}\n b={:?}", a, b
+            );
+        }
+
+        // Theorem 2.2-3 轉置的逆:(Aᵀ)⁻¹ = (A⁻¹)ᵀ —— 轉置與取逆可交換。
+        #[test]
+        fn transpose_inverse_is_inverse_transposed(m in int_matrix(3, 3)) {
+            prop_assume!(m.is_invertible(EPS));
+            let lhs = m.transpose().inverse(EPS).unwrap();
+            let rhs = m.inverse(EPS).unwrap().transpose();
+            prop_assert!(lhs.approx_equals(&rhs, 1e-6), "(Aᵀ)⁻¹ ≠ (A⁻¹)ᵀ\n m={:?}", m);
+        }
+
+        // 筆記 §6 應用:x = A⁻¹b 滿足 Ax = b,且與 solve 的唯一解一致
+        // (筆記也提醒:這在計算上通常不如直接消去 —— 本 law 只驗數學等價)。
+        #[test]
+        fn inverse_solves_linear_system(m in int_matrix(3, 3), b in int_vector(3)) {
+            prop_assume!(m.is_invertible(EPS));
+            let x = m.inverse(EPS).unwrap().multiply_vector(&b).unwrap();
+            let ax = m.multiply_vector(&x).unwrap();
+            prop_assert!(ax.approx_equals(&b, 1e-6), "A·(A⁻¹b) ≠ b\n m={:?}\n b={:?}", m, b);
+            match System::new(m.clone(), b.clone()).unwrap().solve(EPS) {
+                Solution::Unique(x_solve) => prop_assert!(
+                    x.approx_equals(&x_solve, 1e-6),
+                    "A⁻¹b 與 solve 的唯一解不同\n m={:?}\n b={:?}", m, b
+                ),
+                other => prop_assert!(false, "可逆系統應有唯一解,得到 {other:?}\n m={m:?}"),
+            }
+        }
+
+        // 收束全章:inverse() 算出的基本矩陣之逆,恰是 laws 開頭手寫的「同型逆」——
+        // swap 自逆、scale(1/c)、add_scaled(−c)。批 1 的紙上定理由批 3 的演算法兌現。
+        #[test]
+        fn inverse_of_elementary_is_reverse_operation(
+            i in 0usize..3, j in 0usize..3,
+            dst in 0usize..3, step in 1usize..3, c in nonzero_int(),
+        ) {
+            let e = Matrix::elementary_swap(3, i, j).unwrap();
+            prop_assert!(e.inverse(EPS).unwrap().approx_equals(&e, EPS), "swap 應自逆");
+
+            let e = Matrix::elementary_scale(3, i, c).unwrap();
+            let want = Matrix::elementary_scale(3, i, 1.0 / c).unwrap();
+            prop_assert!(e.inverse(EPS).unwrap().approx_equals(&want, EPS), "scale 的逆應為 1/c");
+
+            let src = (dst + step) % 3;
+            let e = Matrix::elementary_add_scaled(3, dst, src, c).unwrap();
+            let want = Matrix::elementary_add_scaled(3, dst, src, -c).unwrap();
+            prop_assert!(e.inverse(EPS).unwrap().approx_equals(&want, EPS), "add 的逆應為 −c");
         }
     }
 }

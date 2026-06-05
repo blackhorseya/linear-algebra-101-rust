@@ -51,6 +51,11 @@ pub enum LinAlgError {
     /// 的 O(n) 運算。(見
     /// [`DiagonalMatrix::from_matrix`](crate::DiagonalMatrix::from_matrix)。)
     NotDiagonal,
+    /// 方陣是奇異的(rank < n,RREF 含零列):依可逆矩陣定理等價於不可逆,
+    /// 反矩陣不存在。非方陣**不**用這個 variant —— 那是
+    /// [`NotSquare`](LinAlgError::NotSquare) 的事,兩層失敗各自精確。
+    /// (見 [`Matrix::inverse`](crate::Matrix::inverse)。)
+    NotInvertible,
 }
 
 impl fmt::Display for LinAlgError {
@@ -102,6 +107,12 @@ impl fmt::Display for LinAlgError {
                 write!(
                     f,
                     "not diagonal: matrix has non-zero entries off the main diagonal"
+                )
+            }
+            LinAlgError::NotInvertible => {
+                write!(
+                    f,
+                    "not invertible: matrix is singular, so no inverse exists"
                 )
             }
         }
@@ -201,6 +212,14 @@ mod tests {
         assert_eq!(
             LinAlgError::NotSquare { rows: 2, cols: 3 }.to_string(),
             "not square: matrix is 2×3, operation requires rows == cols"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_not_invertible() {
+        assert_eq!(
+            LinAlgError::NotInvertible.to_string(),
+            "not invertible: matrix is singular, so no inverse exists"
         );
     }
 

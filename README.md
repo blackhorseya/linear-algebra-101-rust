@@ -40,7 +40,8 @@
 - [x] Gaussian elimination:`row_echelon_form` / `reduced_row_echelon_form`、秩 `rank`、零化度 `nullity`、pivot / free 行
 - [x] 基本矩陣 elementary matrices(`elementary_swap` / `elementary_scale` / `elementary_add_scaled`:Iₙ + 一次 ERO;左乘 E = 施作該列運算)
 - [x] 可逆判定 `is_invertible`(可逆矩陣定理 IMT:RREF = Iₙ ⟺ rank = n ⟺ 行向量獨立 ⟺ 唯一解⋯⋯等價條件以 laws 互驗)
-- [ ] 行列式 `determinant`、反矩陣 `inverse`
+- [x] 反矩陣 `inverse`(Gauss-Jordan 累乘基本矩陣 P = Eₖ⋯E₁,Theorem 2.3 直接寫成演算法;Theorem 2.2 代數性質以 laws 驗證)
+- [ ] 行列式 `determinant`
 
 ### 5. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)
@@ -103,7 +104,7 @@ cd web && pnpm install && pnpm dev
 │   ├── coordinates.rs  # 基底下的座標表示與還原
 │   ├── system.rs       # 線性方程組 Ax=b 與解的分類
 │   ├── elimination.rs  # Gaussian elimination、rank、nullity
-│   ├── inverse.rs      # 可逆矩陣:基本矩陣 elementary_*、可逆判定 is_invertible
+│   ├── inverse.rs      # 可逆矩陣:基本矩陣 elementary_*、可逆判定 is_invertible、反矩陣 inverse
 │   ├── predicate_set.rs# 以述詞表示的集合 PredicateSet
 │   └── wasm.rs         # #[cfg(feature = "wasm")] WASM binding(2D 變換視覺化)
 └── web/                # React + Vite 前端(透過 WASM 呼叫 core)
