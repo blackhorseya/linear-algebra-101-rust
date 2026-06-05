@@ -10,6 +10,7 @@ pub mod diagonal;
 pub mod elimination;
 pub mod error;
 pub mod independence;
+pub mod inverse;
 pub mod matrix;
 pub mod predicate_set;
 pub mod span;
