@@ -16,7 +16,7 @@
 //! 與 `inverse` 同款佈局:本模組跨在 `matrix` 模組外、碰不到 private 的 `data`
 //! 欄位 —— 一律走 public API,再次驗證先前刻的公開介面足以表達新概念。
 
-use crate::Matrix;
+use crate::{LinAlgError, Matrix, Vector};
 
 /// 由矩陣誘導的轉換(matrix transformation induced by A):
 /// 把 m×n 矩陣 A 視為函數 **T_A: ℝⁿ → ℝᵐ**。
@@ -58,6 +58,18 @@ impl Transformation {
     pub fn dimensions(&self) -> (usize, usize) {
         (self.domain_dim(), self.codomain_dim())
     }
+
+    /// 施作轉換:T_A(x) = Ax,把 x ∈ ℝⁿ 送到它的影像(image)y ∈ ℝᵐ。
+    ///
+    /// 這就是「矩陣–向量乘法的函數視角」—— 計算本身第四單元已經刻好
+    /// ([`Matrix::multiply_vector`]),這裡的學習點是**認出它**:
+    /// 不重寫演算法,單一真相只有一份。
+    ///
+    /// `x` 不在定義域(`x.rows() != n`)→ [`LinAlgError::DimensionMismatch`],
+    /// 由乘法本身的維度檢查傳播上來 —— 驗證規則同樣只有單一真相。
+    pub fn apply(&self, x: &Vector) -> Result<Vector, LinAlgError> {
+        self.matrix.multiply_vector(x)
+    }
 }
 
 #[cfg(test)]
@@ -86,5 +98,46 @@ mod tests {
     fn row_matrix_collapses_to_r1() {
         let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0, 3.0]]));
         assert_eq!(t.dimensions(), (3, 1));
+    }
+
+    /// 練習 2 題目原例:投影到 xy 平面 —— z 分量歸零、x 與 y 不動。
+    /// 幾何上是「壓扁」:整個 ℝ³ 被拍到 z = 0 的平面上。
+    #[test]
+    fn apply_projects_onto_xy_plane() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 0.0],
+        ]));
+        let y = t.apply(&Vector::from_vec(vec![1.0, 2.0, 3.0])).unwrap();
+        assert!(y.equals(&Vector::from_vec(vec![1.0, 2.0, 0.0])));
+    }
+
+    /// 剪切(shear)—— 驗收條件點名的變換:x 分量被 y 分量「推」k 倍、y 不動。
+    /// [1, 1] 經 k = 2 的水平剪切 → [1 + 2·1, 1] = [3, 1]。
+    #[test]
+    fn apply_shears_along_x_axis() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![0.0, 1.0]]));
+        let y = t.apply(&Vector::from_vec(vec![1.0, 1.0])).unwrap();
+        assert!(y.equals(&Vector::from_vec(vec![3.0, 1.0])));
+    }
+
+    /// 非方陣換空間:2×3 矩陣把 ℝ³ 的向量送進 ℝ² —— 影像落在 codomain。
+    #[test]
+    fn apply_image_lands_in_codomain() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+        ]));
+        let y = t.apply(&Vector::from_vec(vec![7.0, 8.0, 9.0])).unwrap();
+        assert_eq!(y.rows(), t.codomain_dim());
+    }
+
+    /// x ∉ ℝⁿ 就不在函數的定義範圍內 —— 錯誤是值(DimensionMismatch),不 panic。
+    #[test]
+    fn apply_rejects_vector_outside_domain() {
+        let t = Transformation::new(Matrix::new(3, 5));
+        let x = Vector::from_vec(vec![1.0, 2.0]); // ℝ²,但定義域是 ℝ⁵
+        assert_eq!(t.apply(&x).unwrap_err(), LinAlgError::DimensionMismatch);
     }
 }

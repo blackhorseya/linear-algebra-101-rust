@@ -45,7 +45,7 @@
 
 ### 5. 線性轉換(Linear Transformation)
 - [x] 矩陣作為函數:`Transformation`(A 誘導 T_A: ℝⁿ → ℝᵐ)、定義域 / 對應域維度 `domain_dim` / `codomain_dim` / `dimensions`
-- [ ] 映射 `apply`(T_A(x) = Ax)
+- [x] 映射 `apply`(T_A(x) = Ax,委派 `multiply_vector`,維度檢查隨之繼承)
 - [ ] 線性性質驗證 `verify_linearity`(T(u+v) = T(u)+T(v)、T(cu) = c·T(u))
 - [ ] 單位 / 零轉換 `identity` / `zero`
 - [ ] Theorem 2.7:矩陣誘導的轉換必為線性(laws)
