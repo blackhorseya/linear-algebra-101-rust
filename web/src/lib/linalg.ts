@@ -2,6 +2,8 @@ import init, {
   transform_point,
   are_parallel,
   determinant,
+  can_multiply,
+  multiply_expand,
   eliminate,
   invert_trace,
 } from "./wasm/linear_algebra_101.js";
@@ -44,6 +46,20 @@ export interface EliminationTraceJS {
   pivotColumns: number[];
   /** 終態 free(自由變數)行。 */
   freeColumns: number[];
+}
+
+/** 矩陣乘法 C = A·B 的結果與逐格 row × col 展開(plain-JS,不持有 WASM 指標)。 */
+export interface MultiplyExpansionJS {
+  /** C 的列數 m(= A 的列數)。 */
+  rows: number;
+  /** C 的欄數 p(= B 的欄數)。 */
+  cols: number;
+  /** 內維 n(= A 的欄數 = B 的列數)。 */
+  inner: number;
+  /** C = A·B(rows×cols),由 core 的 multiply 計算。 */
+  c: number[][];
+  /** 展開項:terms[i][j][k] = aᵢₖ·bₖⱼ,且 c[i][j] = Σₖ terms[i][j][k]。 */
+  terms: number[][][];
 }
 
 /** 求逆 trace 每一步施作的 ERO 種類("initial" = 第 0 步,尚未施作)。 */
@@ -105,6 +121,25 @@ export interface Linalg {
   areParallel: (ux: number, uy: number, wx: number, wy: number) => boolean;
   /** 2×2 矩陣 `[[a,b],[c,d]]` 的行列式 ad−bc(= 單位正方形像的有號面積)。 */
   determinant: (a: number, b: number, c: number, d: number) => number;
+  /** A(aRows×aCols) 能否右乘 B(bRows×bCols)。維度規則由 core 的 can_multiply 判定。 */
+  canMultiply: (
+    aRows: number,
+    aCols: number,
+    bRows: number,
+    bCols: number,
+  ) => boolean;
+  /**
+   * 矩陣乘法 C = A·B 與每格的 row × col 展開項。`aData` / `bData` 為 row-major
+   * flatten。**呼叫前先以 `canMultiply` 確認維度相容**(內維不等會直接 panic)。
+   */
+  multiplyExpand: (
+    aData: number[],
+    aRows: number,
+    aCols: number,
+    bData: number[],
+    bRows: number,
+    bCols: number,
+  ) => MultiplyExpansionJS;
   /**
    * 高斯消去法(Gauss-Jordan)逐步 trace。`data` 為 row-major flatten 的矩陣;
    * `augCol` 為增廣欄起點(-1 = 一般矩陣)。回傳乾淨的 plain-JS trace。
@@ -250,6 +285,54 @@ function runInvertTrace(data: number[], n: number): InverseTraceJS {
   }
 }
 
+/**
+ * 同 `runEliminate` 的 SoA 縫合 + `free()` 模式:c 與 terms 各跨界一次,
+ * 縫回 plain-JS 的巢狀陣列後釋放 WASM 物件。
+ */
+function runMultiplyExpand(
+  aData: number[],
+  aRows: number,
+  aCols: number,
+  bData: number[],
+  bRows: number,
+  bCols: number,
+): MultiplyExpansionJS {
+  const exp = multiply_expand(
+    Float64Array.from(aData),
+    aRows,
+    aCols,
+    Float64Array.from(bData),
+    bRows,
+    bCols,
+  );
+  try {
+    const rows = exp.rows;
+    const cols = exp.cols;
+    const inner = exp.inner;
+    const cFlat = exp.c();
+    const termsFlat = exp.terms();
+
+    const c: number[][] = [];
+    const terms: number[][][] = [];
+    for (let i = 0; i < rows; i++) {
+      const cRow: number[] = [];
+      const tRow: number[][] = [];
+      for (let j = 0; j < cols; j++) {
+        cRow.push(cFlat[i * cols + j]);
+        // 第 (i, j) 格的 n 個展開項:flat[(i·p + j)·n .. +n]
+        const base = (i * cols + j) * inner;
+        tRow.push(Array.from(termsFlat.subarray(base, base + inner)));
+      }
+      c.push(cRow);
+      terms.push(tRow);
+    }
+
+    return { rows, cols, inner, c, terms };
+  } finally {
+    exp.free(); // 抽完資料,釋放 WASM 物件(回傳的 plain-JS 不再依賴它)
+  }
+}
+
 // 模組層級 memoize:init 是非同步且只該跑一次。即使多個元件同時呼叫,
 // 也共用同一個 Promise(配合 Query 的 staleTime: Infinity 是雙重保險)。
 let instance: Promise<Linalg> | null = null;
@@ -262,6 +345,8 @@ export function loadLinalg(): Promise<Linalg> {
     transformPoint: transform_point,
     areParallel: are_parallel,
     determinant,
+    canMultiply: can_multiply,
+    multiplyExpand: runMultiplyExpand,
     eliminate: runEliminate,
     invertTrace: runInvertTrace,
   }));

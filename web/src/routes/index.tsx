@@ -20,6 +20,11 @@ const FEATURES = [
     desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
   },
   {
+    to: '/multiply',
+    title: '矩陣乘法',
+    desc: '任意尺寸 (m×n)·(n×p) 的 row × col 互動展開:點 C 的任一格看它由哪一列點積哪一欄,並親手碰到「維度不合不能乘」。',
+  },
+  {
     to: '/elimination',
     title: '高斯消去',
     desc: '逐步播放 forward / backward 消去,看矩陣化成 RREF,並判讀唯一解、無限多解或無解。',
