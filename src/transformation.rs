@@ -413,11 +413,15 @@ mod tests {
     }
 }
 
-/// Theorem 2.7(**矩陣誘導的轉換必為線性**)的全稱驗證。
+/// Theorem 2.7 與 2.9 的全稱驗證。
 ///
 /// `verify_linearity` 在單一樣本上只是「見證」;這裡用 proptest 升級成 for all
 /// 形式:隨機產生矩陣 A 與樣本 (u, v, c),每一組都必須通過線性檢查 ——
 /// 預設 256 組(比題目要求的 10 組多 25 倍),失敗會自動 shrink 成最小反例。
+///
+/// 單元 5-2 接力 **Theorem 2.9** 的兩個半邊:**唯一性**(round-trip:B 誘導的
+/// T 取樣回來必是 B 自己)與**存在性**(T(v) = Av 對任意 v 成立)。這兩條的
+/// **維度也隨機**(`prop_flat_map` 先抽形狀、再抽內容),涵蓋 ℝⁿ → ℝᵐ 的各種組合。
 ///
 /// 沿 repo 慣例,兩種策略對應兩種比較:
 /// - 整數策略:小整數在 f64 下加減乘**完全精確** → epsilon 可給 0.0(精確相等)。
@@ -453,6 +457,19 @@ mod laws {
     /// 長度 `n`、元素為 [-100, 100] 真實浮點的向量。
     fn real_vector(n: usize) -> impl Strategy<Value = Vector> {
         prop::collection::vec(-100.0f64..100.0, n).prop_map(Vector::from_vec)
+    }
+
+    /// 隨機形狀(1..=4 × 1..=4)的整數矩陣 —— `prop_flat_map` 的教學點:
+    /// tuple 策略的各分量**獨立**抽樣,但「先抽形狀、再抽該形狀的矩陣」是
+    /// **有依賴**的兩步 —— flat_map 讓後面的策略吃到前面抽出的值。
+    fn int_matrix_any_shape() -> impl Strategy<Value = Matrix> {
+        (1usize..=4, 1usize..=4).prop_flat_map(|(m, n)| int_matrix(m, n))
+    }
+
+    /// 隨機形狀的真實浮點矩陣,連同一支**長度 = 矩陣行數**的向量 ——
+    /// v 必須住在 T 的定義域 ℝⁿ,所以 n 得在同一次 flat_map 裡共用。
+    fn real_matrix_with_vector() -> impl Strategy<Value = (Matrix, Vector)> {
+        (1usize..=4, 1usize..=4).prop_flat_map(|(m, n)| (real_matrix(m, n), real_vector(n)))
     }
 
     proptest! {
@@ -493,6 +510,32 @@ mod laws {
                 c,
                 1e-9
             ));
+        }
+
+        // Theorem 2.9(唯一性半邊,整數精確):隨機形狀的 B 誘導 T_B,
+        // standard_matrix 從 T_B 取樣重建的矩陣必須 == B 一絲不差 ——
+        // 「線性轉換的標準矩陣唯一」寫成可跑的定理。
+        //   提醒:laws 一律 prop_assert!;n = b.cols() ≥ 1,unwrap 有守衛。
+        #[test]
+        fn theorem_2_9_standard_matrix_recovers_inducing_matrix(b in int_matrix_any_shape()) {
+            let t = Transformation::new(b.clone());
+            let a = standard_matrix(t.domain_dim(), |x| t.apply(x).unwrap()).unwrap();
+            prop_assert!(a.equals(&b));
+        }
+
+        // Theorem 2.9(存在性半邊,真實浮點):題目原話 —— 對任意隨機 v,
+        // 「直接呼叫 T(v)」與「左乘標準矩陣 Av」在 1e-9 容差內相同;
+        // 形狀隨機,涵蓋 ℝ² → ℝ³ 等各種維度的映射。
+        //   比對 t.apply(&v) 與 a.multiply_vector(&v) 兩條路的結果。
+        #[test]
+        fn theorem_2_9_transformation_agrees_with_matrix_multiplication(
+            (b, v) in real_matrix_with_vector(),
+        ) {
+            let t = Transformation::new(b.clone());
+            let a = standard_matrix(t.domain_dim(), |x| t.apply(x).unwrap()).unwrap();
+            let via_t = t.apply(&v).unwrap();
+            let via_a = a.multiply_vector(&v).unwrap();
+            prop_assert!(via_t.approx_equals(&via_a, 1e-9));
         }
     }
 }
