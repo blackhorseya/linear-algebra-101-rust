@@ -13,6 +13,11 @@
 //!
 //! Theorem 2.7(**矩陣誘導的轉換必為線性**)以 `mod laws` 的 proptest 隨機驗證。
 //!
+//! 單元 5-2(講義 2.7 後段)補上反向通道 **Theorem 2.9**:每個線性轉換
+//! T: ℝⁿ → ℝᵐ 都由**唯一**的 m×n 矩陣誘導 —— [`standard_matrix`] 對 T 做
+//! n 次標準基底取樣,把「函數」蒸餾回「資料」,與 `Transformation::new`
+//! (資料 ↦ 函數)合起來構成一一對應。
+//!
 //! 與 `inverse` 同款佈局:本模組跨在 `matrix` 模組外、碰不到 private 的 `data`
 //! 欄位 —— 一律走 public API,再次驗證先前刻的公開介面足以表達新概念。
 
@@ -125,6 +130,46 @@ where
     let left_scale = t(&u.scale(c));
     let right_scale = tu.scale(c);
     left_add.approx_equals(&right_add, epsilon) && left_scale.approx_equals(&right_scale, epsilon)
+}
+
+/// 標準矩陣(standard matrix)構造器:對映射 T 做 n 次標準基底取樣,
+/// 蒸餾出誘導它的矩陣 A —— **A 的第 j 行(column)= T(eⱼ)**(Theorem 2.9)。
+///
+/// 與 [`verify_linearity`] 是一對:同樣收泛型 `F: Fn(&Vector) -> Vector`
+/// (T 不必由矩陣誘導),一個**檢查**任意映射、一個**取樣**任意映射。
+/// Theorem 2.9 的「若 T 線性」前提在這裡承重:非線性的 T 照樣能取樣出
+/// 一個矩陣(構造器只看 eⱼ 上的值),但那個矩陣**重現不了** T ——
+/// 見測試 `standard_matrix_of_nonlinear_map_builds_an_impostor`。
+///
+/// codomain 維度 m 不收參數、從 T 的輸出導出(維度從資料導出,不另存):
+/// - `n == 0` → [`LinAlgError::EmptyInput`]:沒有基底可取樣,m 無從決定
+///   (與 [`Vector::linear_combination`] 的空集合同款)。
+/// - 各 T(eⱼ) 輸出維度不一致 → [`LinAlgError::DimensionMismatch`]
+///   (T 根本不是到同一個 ℝᵐ 的函數)。
+pub fn standard_matrix<F>(n: usize, t: F) -> Result<Matrix, LinAlgError>
+where
+    F: Fn(&Vector) -> Vector,
+{
+    // 沒有 e_j 可取樣,m 無從導出 —— 與 linear_combination 的空集合同款。
+    if n == 0 {
+        return Err(LinAlgError::EmptyInput);
+    }
+    // 取樣:images[j] = T(e_j)。j < n 是迴圈不變式,Vector::standard 的
+    // Err(IndexOutOfRange)是被證明的死路 —— unwrap 安全(先守衛、再 unwrap)。
+    let images: Vec<Vector> = (0..n)
+        .map(|j| t(&Vector::standard(n, j).unwrap()))
+        .collect();
+    // m 從第一支影像導出(維度從資料導出,不另存);其餘影像必須住在同一個 ℝᵐ。
+    let m = images[0].rows();
+    if images.iter().any(|image| image.rows() != m) {
+        return Err(LinAlgError::DimensionMismatch);
+    }
+    // 組裝(row-major 逐列收):第 i 列橫掃所有影像的第 i 個分量,
+    // 等效於「T(e_j) 直放為 A 的第 j 行」—— A[i][j] = T(e_j)ᵢ,免去顯式 transpose。
+    let rows: Vec<Vec<f64>> = (0..m)
+        .map(|i| images.iter().map(|image| image.entries()[i]).collect())
+        .collect();
+    Ok(Matrix::from_rows(rows))
 }
 
 #[cfg(test)]
@@ -279,6 +324,70 @@ mod tests {
         let z = Transformation::zero(3, 2);
         assert!(verify_linearity(|x| i.apply(x).unwrap(), &u, &v, 2.5, 1e-9));
         assert!(verify_linearity(|x| z.apply(x).unwrap(), &u, &v, 2.5, 1e-9));
+    }
+
+    /// 單元 5-2 練習 1 題目原例:T(x₁,x₂,x₃) = (3x₁−4x₂, 2x₁+x₃) 的標準矩陣。
+    /// 注意 m = 2 沒被宣告 —— codomain 維度從 T 的輸出導出(維度從資料導出,
+    /// 不另存),整數係數在 f64 下精確,可用精確 equals。
+    #[test]
+    fn standard_matrix_of_formula_example() {
+        let t = |x: &Vector| {
+            let e = x.entries();
+            Vector::from_vec(vec![3.0 * e[0] - 4.0 * e[1], 2.0 * e[0] + e[2]])
+        };
+        let a = standard_matrix(3, t).unwrap();
+        assert!(a.equals(&Matrix::from_rows(vec![
+            vec![3.0, -4.0, 0.0],
+            vec![2.0, 0.0, 1.0],
+        ])));
+        assert_eq!((a.rows(), a.cols()), (2, 3), "m×n = 2×3:ℝ³ → ℝ²");
+    }
+
+    /// 單一見證的 round-trip:矩陣 B 誘導的 T 取樣回來就是 B 自己 ——
+    /// Theorem 2.9「唯一性」的具體一例,全稱版留給 mod laws(練習 3)。
+    #[test]
+    fn standard_matrix_recovers_inducing_matrix() {
+        let b = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]);
+        let t = Transformation::new(b.clone());
+        let a = standard_matrix(2, |x| t.apply(x).unwrap()).unwrap();
+        assert!(a.equals(&b));
+    }
+
+    /// 非線性 T 也能取樣出矩陣 —— 但它是冒牌貨,基底之外重現不了 T。
+    /// 逐元素平方在 eⱼ 上說不了謊(0² = 0、1² = 1 → 取樣出 I),
+    /// 但 T(2e₁) = 4e₁ ≠ I·(2e₁) = 2e₁:Theorem 2.9 的「若 T 線性」前提在承重。
+    #[test]
+    fn standard_matrix_of_nonlinear_map_builds_an_impostor() {
+        let square = |x: &Vector| Vector::from_vec(x.entries().iter().map(|e| e * e).collect());
+        let a = standard_matrix(2, square).unwrap();
+        assert!(a.equals(&Matrix::identity(2)), "在基底上取樣看不出非線性");
+        let x = Vector::from_vec(vec![2.0, 0.0]);
+        let via_matrix = a.multiply_vector(&x).unwrap();
+        assert!(!square(&x).equals(&via_matrix), "基底之外,冒牌貨就穿幫");
+    }
+
+    /// n = 0:沒有基底可取樣,codomain 維度無從導出 —— EmptyInput
+    /// (沿 linear_combination 空集合的慣例:無從決定結果維度)。
+    #[test]
+    fn standard_matrix_rejects_empty_domain() {
+        assert_eq!(
+            standard_matrix(0, |x: &Vector| x.clone()).unwrap_err(),
+            LinAlgError::EmptyInput
+        );
+    }
+
+    /// 輸出維度忽長忽短的「映射」根本不是到同一個 ℝᵐ 的函數 → DimensionMismatch。
+    /// 這支 closure 對 e₁ 吐 ℝ¹、對 e₂ 吐 ℝ²(輸出長度 = 非零分量位置 + 1)。
+    #[test]
+    fn standard_matrix_rejects_inconsistent_codomain() {
+        let ragged = |x: &Vector| {
+            let j = x.entries().iter().position(|&e| e != 0.0).unwrap();
+            Vector::new(j + 1)
+        };
+        assert_eq!(
+            standard_matrix(2, ragged).unwrap_err(),
+            LinAlgError::DimensionMismatch
+        );
     }
 }
 

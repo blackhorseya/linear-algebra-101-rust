@@ -49,6 +49,7 @@
 - [x] 線性性質驗證 `verify_linearity`(T(u+v) = T(u)+T(v)、T(cu) = c·T(u);泛型 `Fn(&Vector) -> Vector` 收任意映射,可識破仿射轉換)
 - [x] 單位 / 零轉換 `identity` / `zero`(I(x) = x、T₀(x) = 0;零轉換不必方陣,0 ∈ codomain ℝᵐ)
 - [x] Theorem 2.7:矩陣誘導的轉換必為線性(laws,proptest 隨機掃 —— 整數策略配精確 equals、浮點策略配 1e-9 容差)
+- [x] 標準矩陣 `standard_matrix`(Theorem 2.9:對任意映射做標準基底取樣,T(eⱼ) 直放為 A 的第 j 行;codomain 維度從輸出導出,非線性映射取樣出的矩陣重現不了原函數)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 
 ### 6. 進階主題
