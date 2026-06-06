@@ -57,6 +57,7 @@
 - [x] 值域成員判定 `range_contains`(w ∈ Range(T) ⟺ Ax = w 相容 —— 成員判定就是一致性判定,委派 `System::is_consistent`;w 不在 codomain 回 false)
 - [x] 映成判定 `is_onto`(Theorem 2.10:onto ⟺ rank(A) = m —— 全稱命題壓縮成一個數字比較;laws:onto ⟺ 全標準基底可達、高瘦必不映成、方陣 onto ⟺ 可逆(IMT 第十條等價條件))
 - [x] 不可達向量 `unreachable_vector`(不映成的具體見證:掃描 e₁…e_m 回第一支不在值域的 —— proper subspace 裝不下整組 spanning set,故見證必存在;映成時掃描空手而回,Option 與映成性嚴絲合縫)
+- [x] 值域的基底 `range_basis`(行對應定理:列運算保持行**之間**的線性關係,pivot 落在哪幾行、原矩陣的那幾支行就是獨立的 —— 索引問 RREF、內容問原始 A;laws 三條合起來即「是基底」的完整證明:獨立 + 住在值域 + 大小 = rank)
 - [x] 標準矩陣取樣互動圖解:選幾何規則(旋轉 / 反射 / 剪切⋯)看 T(e₁)、T(e₂) 直放成 A 的行,可在 [web 視覺化](#視覺化)操作(矩陣由 core 的 `standard_matrix` 當場取樣,「規則路徑 vs 矩陣路徑」兩路對帳)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 

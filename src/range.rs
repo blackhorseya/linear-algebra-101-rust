@@ -112,6 +112,30 @@ impl Transformation {
             .map(|i| Vector::standard(m, i).unwrap())
             .find(|e_i| !self.range_contains(e_i, epsilon))
     }
+
+    /// 值域的基底(basis for the range):從生成集合(練習 1,可能冗餘)
+    /// 蒸餾出**獨立**的子集 —— 取 **pivot 行對應的原始行向量**。
+    ///
+    /// 根據是行對應定理(Column Correspondence Theorem):列運算不改變
+    /// **行之間**的線性關係(Ax = 0 與 RREF(A)·x = 0 同解,而「第 j 行
+    /// 是其他行的組合」正是一支特定的 x)—— 所以 RREF 裡 pivot 落在哪幾行,
+    /// 原矩陣的**那幾支行**就是獨立的,且其餘行都是它們的組合。
+    ///
+    /// **經典陷阱**:回的是**原始 A 的行**,不是 RREF 的行 —— RREF 的
+    /// pivot 行長得像 eᵢ,通常**根本不在 Col(A) 裡**(列運算保持的是
+    /// 行之間的「關係」,不是行本身)。題目原例的第一支基底是 (1,2,0)
+    /// 而非 e₁,測試就釘在這裡。
+    ///
+    /// 實作提示:又是兩個積木接線 ——
+    /// [`Matrix::pivot_columns`](crate::Matrix::pivot_columns) 給索引、
+    /// [`Matrix::column`](crate::Matrix::column) 給內容(pivot 索引
+    /// 依建構 < cols,unwrap 安全)。與練習 1 比較:同樣的 map-collect,
+    /// 只是索引來源從「全部 0..n」換成「pivot 那幾個」。
+    pub fn range_basis(&self, epsilon: f64) -> Vec<Vector> {
+        let a = self.matrix();
+        let pivot_cols = a.pivot_columns(epsilon);
+        pivot_cols.iter().map(|&j| a.column(j).unwrap()).collect()
+    }
 }
 
 #[cfg(test)]
@@ -281,6 +305,44 @@ mod tests {
         ]));
         assert!(projection.unreachable_vector(1e-9).is_none());
     }
+
+    /// 練習 5 題目原例:A = [[1,2,1],[2,4,0],[0,0,2]],第二行 = 2×第一行 ——
+    /// pivot 落在行 0 與行 2,基底取**原始矩陣**的那兩支行。
+    /// 陷阱在 basis[0]:行對應定理取的是 (1,2,0),錯拿 RREF 的 pivot 行
+    /// 會得到 e₁ = (1,0,0) —— 那支根本不在 Col(A) 裡。
+    #[test]
+    fn range_basis_of_textbook_example_takes_original_columns() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 2.0, 1.0],
+            vec![2.0, 4.0, 0.0],
+            vec![0.0, 0.0, 2.0],
+        ]));
+        let basis = t.range_basis(1e-9);
+        assert_eq!(basis.len(), 2, "rank 2:行 1 是行 0 的兩倍,被剔除");
+        assert!(
+            basis[0].equals(&Vector::from_vec(vec![1.0, 2.0, 0.0])),
+            "要的是原始 A 的行 0,不是 RREF 的 e₁"
+        );
+        assert!(basis[1].equals(&Vector::from_vec(vec![1.0, 0.0, 2.0])));
+    }
+
+    /// 零轉換:值域 = {0},基底是**空集合**(空集合張成 {0} 是慣例,
+    /// 沿 linear_combination 的空集合語意)—— rank 0,一支都不取。
+    #[test]
+    fn range_basis_of_zero_transformation_is_empty() {
+        let t = Transformation::zero(2, 3);
+        assert!(t.range_basis(1e-9).is_empty());
+    }
+
+    /// 滿秩(可逆)方陣:沒有冗餘行,基底 = 整組生成集合 —— 蒸餾無事可做。
+    #[test]
+    fn range_basis_of_invertible_keeps_every_column() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]));
+        let basis = t.range_basis(1e-9);
+        assert_eq!(basis.len(), 2);
+        assert!(basis[0].equals(&Vector::from_vec(vec![2.0, 1.0])));
+        assert!(basis[1].equals(&Vector::from_vec(vec![1.0, 1.0])));
+    }
 }
 
 /// 值域與映成的 property test —— 本章的 laws 幾乎都是**跨練習交叉對帳**,
@@ -411,6 +473,49 @@ mod laws {
                 prop_assert!(
                     matches!(s.solve(EPS), crate::Solution::Inconsistent),
                     "Ax = b 應無解"
+                );
+            }
+        }
+
+        // ---- 練習 5 的三條合起來是「真的是基底」的完整證明:住在 Range 的
+        // 獨立集合、大小又恰為 dim(Range) = rank ⟹ 必為 Range 的基底
+        // (張成自動跟上 —— 維度論證,不必另驗)。----
+
+        // 基底大小 = rank(題目驗收):Col(A) 的維度就是 pivot 數。
+        #[test]
+        fn basis_size_equals_rank(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a.clone());
+            prop_assert_eq!(t.range_basis(EPS).len(), a.rank(EPS));
+        }
+
+        // 基底必獨立(題目驗收):交給 independence 模組走獨立路徑驗證
+        // (它數的是 rank,但作用在「抽出來的行」重排成的矩陣上)。
+        #[test]
+        fn basis_is_linearly_independent(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            prop_assert!(crate::is_linearly_independent(EPS, &t.range_basis(EPS)));
+        }
+
+        // 基底住在值域(練習 2 ↔ 5 交叉對帳):每支基底向量都可達。
+        #[test]
+        fn basis_lives_in_range(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            for b in t.range_basis(EPS) {
+                prop_assert!(t.range_contains(&b, EPS), "基底向量不在值域?");
+            }
+        }
+
+        // 基底 ⊆ 生成集合(練習 1 ↔ 5 交叉對帳):行對應定理取的是
+        // **原始矩陣的行**,每支基底向量必須一字不差出現在生成集合裡 ——
+        // 錯拿 RREF 的行(根本不在 Col(A))會在這裡穿幫。
+        #[test]
+        fn basis_is_subset_of_generating_set(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            let gens = t.range_generating_set();
+            for b in t.range_basis(EPS) {
+                prop_assert!(
+                    gens.iter().any(|g| g.equals(&b)),
+                    "基底向量不是原始行?b={b:?}"
                 );
             }
         }
