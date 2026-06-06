@@ -20,43 +20,15 @@ function RootLayout() {
   return (
     <div className="min-h-svh bg-slate-950 text-slate-200">
       <header className="border-b border-slate-800">
-        <nav className="mx-auto flex max-w-4xl items-center gap-6 px-6 py-4">
-          <span className="font-semibold text-slate-50">線性代數 101</span>
-          <div className="flex gap-4 text-sm">
-            {/* TanStack Router 會在符合的 Link 上自動掛 `active` class,
-                這裡用 Tailwind 的 `[&.active]:` 變體上色。 */}
-            <Link
-              to="/"
-              activeOptions={{ exact: true }}
-              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
-            >
-              首頁
-            </Link>
-            <Link
-              to="/transform"
-              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
-            >
-              2D 變換
-            </Link>
-            <Link
-              to="/span"
-              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
-            >
-              張成 Span
-            </Link>
-            <Link
-              to="/elimination"
-              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
-            >
-              高斯消去
-            </Link>
-            <Link
-              to="/invertibility"
-              className="text-slate-400 transition hover:text-slate-50 [&.active]:text-violet-400"
-            >
-              可逆矩陣
-            </Link>
-          </div>
+        <nav className="mx-auto flex max-w-4xl items-center px-6 py-4">
+          {/* 功能入口集中在首頁(routes/index.tsx 的 FEATURES),
+              header 只留品牌名作為回首頁的 Link。 */}
+          <Link
+            to="/"
+            className="font-semibold text-slate-50 transition hover:text-violet-300"
+          >
+            線性代數 101
+          </Link>
         </nav>
       </header>
 

@@ -1,9 +1,35 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 // 檔名 index.tsx → 對應路徑 '/'。新增 about.tsx 就會自動產生 '/about'。
 export const Route = createFileRoute('/')({
   component: Home,
 })
+
+// 功能入口(原本掛在 header nav,改為首頁卡片)。
+// `as const` 讓 `to` 保持字面量型別,Link 的路徑打錯會直接編譯失敗。
+// 新增視覺化頁面時在這裡補一筆即可。
+const FEATURES = [
+  {
+    to: '/transform',
+    title: '2D 線性變換',
+    desc: '拖動向量、調整 2×2 矩陣,看整個平面如何被變形;行列式的幾何意義 = 面積縮放與翻面。',
+  },
+  {
+    to: '/span',
+    title: '張成 Span',
+    desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
+  },
+  {
+    to: '/elimination',
+    title: '高斯消去',
+    desc: '逐步播放 forward / backward 消去,看矩陣化成 RREF,並判讀唯一解、無限多解或無解。',
+  },
+  {
+    to: '/invertibility',
+    title: '可逆矩陣',
+    desc: 'Gauss-Jordan 累乘基本矩陣求 A⁻¹,並以 2D 變換看每個列運算的幾何意義(鏡射、伸縮、剪切)。',
+  },
+] as const
 
 const STACK = [
   ['React 19', 'UI 函式庫'],
@@ -16,27 +42,47 @@ const STACK = [
 
 function Home() {
   return (
-    <section className="space-y-8">
+    <section className="space-y-10">
       <div className="space-y-3">
         <h1 className="text-3xl font-bold tracking-tight text-slate-50">
           線性代數 101 · Web
         </h1>
         <p className="text-slate-400">
-          這是 Rust 線性代數 library 的前端 playground，腳手架已就緒。
+          Rust 手刻線性代數 library 的互動圖解 —— 所有計算由 Rust(WASM)完成,JS 只負責畫圖與互動。
         </p>
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {STACK.map(([name, desc]) => (
-          <li
-            key={name}
-            className="rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3"
-          >
-            <p className="font-medium text-slate-100">{name}</p>
-            <p className="text-sm text-slate-400">{desc}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-100">互動圖解</h2>
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {FEATURES.map(({ to, title, desc }) => (
+            <li key={to}>
+              <Link
+                to={to}
+                className="block h-full rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3 transition hover:border-violet-500/60 hover:bg-slate-900"
+              >
+                <p className="font-medium text-violet-300">{title} →</p>
+                <p className="mt-1 text-sm text-slate-400">{desc}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-slate-500">技術棧</h2>
+        <ul className="grid gap-2 sm:grid-cols-3">
+          {STACK.map(([name, desc]) => (
+            <li
+              key={name}
+              className="rounded-md border border-slate-800/60 px-3 py-2"
+            >
+              <p className="text-sm text-slate-300">{name}</p>
+              <p className="text-xs text-slate-500">{desc}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   )
 }
