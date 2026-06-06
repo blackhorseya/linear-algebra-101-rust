@@ -90,6 +90,28 @@ impl Transformation {
         let a = self.matrix();
         a.rank(epsilon) == self.codomain_dim()
     }
+
+    /// 不可達向量(unreachable vector):T 不映成時,找一支 **b ∉ Range(T)**
+    /// (即 Ax = b 無解的 b)作為「值域沒蓋滿」的具體見證;映成則回 `None`。
+    ///
+    /// 策略:**標準基底掃描** —— 逐一檢查 e₁ … e_m,回第一支不可達的。
+    /// 正確性三行證明:T 不映成 ⟹ Range(T) 是 ℝᵐ 的 **proper** subspace ⟹
+    /// 必有某 eᵢ ∉ Range(否則 Range ⊇ Span{e₁…e_m} = ℝᵐ,矛盾)——
+    /// proper subspace 裝不下整組 spanning set。法 `onto_iff_every_standard_
+    /// basis_vector_reachable` 已把這個根據存證成可跑的定理。
+    ///
+    /// **不需要先問 `is_onto` 短路**:映成時所有 eᵢ 可達,掃描自然空手而回
+    /// —— `Option` 的兩個 variant 與「映成 / 不映成」嚴絲合縫,零分支。
+    ///
+    /// 實作提示:`(0..m).map(…).find(…)` —— [`Vector::standard`] 取 eᵢ
+    /// (i < m 是迴圈不變式,unwrap 安全),`find` 收「**不**可達」述詞
+    /// (注意否定:找的是 `!range_contains` 的那支)。
+    pub fn unreachable_vector(&self, epsilon: f64) -> Option<Vector> {
+        let m = self.codomain_dim();
+        (0..m)
+            .map(|i| Vector::standard(m, i).unwrap())
+            .find(|e_i| !self.range_contains(e_i, epsilon))
+    }
 }
 
 #[cfg(test)]
@@ -218,6 +240,47 @@ mod tests {
         let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
         assert!(!t.is_onto(1e-9));
     }
+
+    /// 練習 4 題目原例:ℝ² 嵌入 ℝ³(值域 = xy 平面)—— e₁、e₂ 都在平面上,
+    /// 掃描走到 e₃ = (0,0,1) 才出界 → 它就是見證;並用 range_contains
+    /// 反驗這支見證確實不可達(Ax = b 無解)。
+    #[test]
+    fn unreachable_vector_finds_witness_off_xy_plane() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![0.0, 0.0],
+        ]));
+        let b = t.unreachable_vector(1e-9).expect("不映成必有見證");
+        assert!(
+            b.equals(&Vector::standard(3, 2).unwrap()),
+            "掃描序:e₃ 是第一支出界的"
+        );
+        assert!(!t.range_contains(&b, 1e-9), "見證必須真的不可達");
+    }
+
+    /// 行成比例的方陣:值域塌成直線 span{(1,2)},e₁ = (1,0) 就不在線上 ——
+    /// 掃描第一步即命中。
+    #[test]
+    fn unreachable_vector_exits_early_on_first_witness() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
+        let b = t.unreachable_vector(1e-9).expect("rank 1 < 2,必有見證");
+        assert!(b.equals(&Vector::standard(2, 0).unwrap()));
+    }
+
+    /// 映成的轉換沒有不可達向量:所有 eᵢ 可達,掃描空手而回 → None ——
+    /// Option 的兩個 variant 與「映成 / 不映成」嚴絲合縫。
+    #[test]
+    fn unreachable_vector_is_none_for_onto() {
+        let identity = Transformation::new(Matrix::identity(2));
+        assert!(identity.unreachable_vector(1e-9).is_none());
+        // 壓縮方向的投影(ℝ³ → ℝ²)也映成 —— None 不是方陣專利
+        let projection = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+        ]));
+        assert!(projection.unreachable_vector(1e-9).is_none());
+    }
 }
 
 /// 值域與映成的 property test —— 本章的 laws 幾乎都是**跨練習交叉對帳**,
@@ -326,6 +389,30 @@ mod laws {
         fn square_transformation_onto_iff_invertible(a in int_matrix(3, 3)) {
             let t = Transformation::new(a.clone());
             prop_assert_eq!(t.is_onto(EPS), a.is_invertible(EPS));
+        }
+
+        // 掃描與判定對偶(練習 3 ↔ 4 交叉對帳):「找不到見證」與「映成」
+        // 是同一件事的兩種問法 —— is_onto 數 rank、unreachable_vector 掃基底,
+        // 兩條獨立路徑必須同答案。
+        #[test]
+        fn no_witness_iff_onto(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            prop_assert_eq!(t.unreachable_vector(EPS).is_none(), t.is_onto(EPS));
+        }
+
+        // 見證的品質(題目驗收):回 Some(b) 的那支 b 必須真的不可達 ——
+        // 用 System::solve 走第三條獨立路徑驗證 Ax = b 確實無解。
+        #[test]
+        fn witness_is_truly_unreachable(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a.clone());
+            if let Some(b) = t.unreachable_vector(EPS) {
+                prop_assert!(!t.range_contains(&b, EPS), "見證居然可達");
+                let s = crate::System::new(a, b).unwrap(); // b ∈ ℝᵐ 依建構,維度必合
+                prop_assert!(
+                    matches!(s.solve(EPS), crate::Solution::Inconsistent),
+                    "Ax = b 應無解"
+                );
+            }
         }
     }
 }
