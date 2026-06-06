@@ -70,6 +70,23 @@ impl Transformation {
     pub fn apply(&self, x: &Vector) -> Result<Vector, LinAlgError> {
         self.matrix.multiply_vector(x)
     }
+
+    /// 單位轉換(identity transformation)I: ℝⁿ → ℝⁿ,**I(x) = x** ——
+    /// 由單位矩陣 Iₙ 誘導,什麼都不動的轉換。
+    ///
+    /// 矩陣生成邏輯第二單元已刻好([`Matrix::identity`]),這裡是它的「函數視角」。
+    pub fn identity(n: usize) -> Transformation {
+        Transformation::new(Matrix::identity(n))
+    }
+
+    /// 零轉換(zero transformation)T₀: ℝⁿ → ℝᵐ,**T₀(x) = 0** ——
+    /// 由 m×n 零矩陣誘導,把整個空間吸到原點的轉換。
+    ///
+    /// 注意零轉換**不必是方陣**:輸出的零向量 0 ∈ ℝᵐ(codomain),維度可與輸入不同
+    /// —— 參數順序 (m, n) 沿矩陣慣稱「m×n = 列×行」。
+    pub fn zero(m: usize, n: usize) -> Transformation {
+        Transformation::new(Matrix::new(m, n))
+    }
 }
 
 /// 線性性質驗證器:檢查映射 T 在**一組樣本** (u, v, c) 上是否滿足
@@ -228,5 +245,39 @@ mod tests {
         let u = Vector::from_vec(vec![1.0]);
         let v = Vector::from_vec(vec![1.0, 2.0]);
         assert!(!verify_linearity(id, &u, &v, 2.0, 1e-9));
+    }
+
+    /// 練習 4 驗收(一):單位轉換後向量**完全不變**(Iₙ·x 每項是 1·xᵢ + 0 的和,
+    /// 浮點下精確,可用精確 equals)。
+    #[test]
+    fn identity_transformation_fixes_every_vector() {
+        let i = Transformation::identity(3);
+        let x = Vector::from_vec(vec![1.5, -2.0, 3.25]);
+        assert!(i.apply(&x).unwrap().equals(&x));
+        assert_eq!(i.dimensions(), (3, 3), "I 不換空間:ℝ³ → ℝ³");
+    }
+
+    /// 練習 4 驗收(二):零轉換的影像必為全零向量 —— 且落在 codomain ℝᵐ,
+    /// 不是 domain ℝⁿ(2×4 的零矩陣把 ℝ⁴ 吸到 ℝ² 的原點)。
+    #[test]
+    fn zero_transformation_sends_everything_to_origin() {
+        let z = Transformation::zero(2, 4);
+        let y = z
+            .apply(&Vector::from_vec(vec![1.0, -2.0, 3.0, 4.0]))
+            .unwrap();
+        assert!(y.is_zero());
+        assert_eq!(y.rows(), 2, "零向量 0 ∈ ℝᵐ(codomain),維度與輸入不同");
+    }
+
+    /// identity 與 zero 都通過線性檢查 —— 它們是「最簡單的兩個線性轉換」,
+    /// 也是 Theorem 2.7 的特例(各由 Iₙ、0ₘₓₙ 誘導)。
+    #[test]
+    fn identity_and_zero_transformations_are_linear() {
+        let u = Vector::from_vec(vec![1.0, 2.0]);
+        let v = Vector::from_vec(vec![-3.0, 0.5]);
+        let i = Transformation::identity(2);
+        let z = Transformation::zero(3, 2);
+        assert!(verify_linearity(|x| i.apply(x).unwrap(), &u, &v, 2.5, 1e-9));
+        assert!(verify_linearity(|x| z.apply(x).unwrap(), &u, &v, 2.5, 1e-9));
     }
 }
