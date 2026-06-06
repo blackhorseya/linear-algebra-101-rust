@@ -376,6 +376,28 @@ mod tests {
         );
     }
 
+    /// 單元 5-2 練習 2:x 軸反射 —— 幾何規則經 standard_matrix 蒸餾成矩陣。
+    /// 反射不進 core API:教學點是「幾何直觀 → 構造器 → 數值」這條工作流本身
+    /// (寫**規則**,讓構造器去發現矩陣 —— 不是先想好矩陣再抄進去)。
+    #[test]
+    fn standard_matrix_of_x_axis_reflection() {
+        // 「x 不動、y 翻號」((x, y) ↦ (x, −y)),矩陣留給構造器去發現。
+        let reflect = |x: &Vector| -> Vector {
+            let e = x.entries();
+            Vector::from_vec(vec![e[0], -e[1]])
+        };
+        let a = standard_matrix(2, reflect).unwrap();
+        assert!(
+            a.equals(&Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, -1.0]])),
+            "構造器應從規則發現 U(e₁) = e₁、U(e₂) = −e₂"
+        );
+        // 驗收:(3, 5) 反射後 (3, −5) —— 用蒸餾出的矩陣親自轉一次
+        let y = a
+            .multiply_vector(&Vector::from_vec(vec![3.0, 5.0]))
+            .unwrap();
+        assert!(y.equals(&Vector::from_vec(vec![3.0, -5.0])));
+    }
+
     /// 輸出維度忽長忽短的「映射」根本不是到同一個 ℝᵐ 的函數 → DimensionMismatch。
     /// 這支 closure 對 e₁ 吐 ℝ¹、對 e₂ 吐 ℝ²(輸出長度 = 非零分量位置 + 1)。
     #[test]
