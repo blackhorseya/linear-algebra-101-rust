@@ -72,6 +72,44 @@ impl Transformation {
     }
 }
 
+/// 線性性質驗證器:檢查映射 T 在**一組樣本** (u, v, c) 上是否滿足
+/// 線性轉換定義的兩大守恆:
+///
+/// 1. 加法守恆:T(u + v) = T(u) + T(v)
+/// 2. 純量乘守恆:T(c·u) = c·T(u)
+///
+/// **為什麼是 free function、不是 `Transformation` 的方法?** 線性是對
+/// 「任意映射」的定義 —— T 不必由矩陣誘導。泛型 `F: Fn(&Vector) -> Vector`
+/// 收任何「向量進、向量出」的函數(closure、fn pointer、包了 `apply` 的
+/// closure⋯⋯),Theorem 2.7 才回頭說:**矩陣誘導的那種必過此檢查**。
+/// 定義(這裡)與定理(`mod laws`)分開放,概念的依賴方向才對。
+///
+/// **見證與反例的不對稱**:通過一組樣本只是「見證」,不能證明線性
+/// (那是 for all 命題,見 laws 的 proptest);但**失敗一組樣本就證明了非線性**
+/// —— 這正是它能識破仿射轉換 T(x) = 2x + 3 的原因。
+///
+/// u、v 不在同一空間(維度不合),或 T 的輸出維度前後不一致 → `false`
+/// (沿 [`Vector::is_parallel`] 的慣例:不在同一空間就談不上守恆)。
+/// 浮點比較的容差 `epsilon` 由呼叫端視運算數量級指定。
+pub fn verify_linearity<F>(t: F, u: &Vector, v: &Vector, c: f64, epsilon: f64) -> bool
+where
+    F: Fn(&Vector) -> Vector,
+{
+    if u.rows() != v.rows() {
+        return false; // u、v 不在同一空間,談不上守恆
+    }
+    let tu = t(u);
+    let tv = t(v);
+    if tu.rows() != tv.rows() {
+        return false; // T 的輸出維度前後不一致,談不上守恆
+    }
+    let left_add = t(&u.add(v).unwrap());
+    let right_add = tu.add(&tv).unwrap();
+    let left_scale = t(&u.scale(c));
+    let right_scale = tu.scale(c);
+    left_add.approx_equals(&right_add, epsilon) && left_scale.approx_equals(&right_scale, epsilon)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +177,56 @@ mod tests {
         let t = Transformation::new(Matrix::new(3, 5));
         let x = Vector::from_vec(vec![1.0, 2.0]); // ℝ²,但定義域是 ℝ⁵
         assert_eq!(t.apply(&x).unwrap_err(), LinAlgError::DimensionMismatch);
+    }
+
+    /// 練習 3:矩陣誘導的轉換(shear)通過線性檢查 —— Theorem 2.7 的單一見證,
+    /// 全稱版見 mod laws。closure 包住 apply,把 Transformation 餵進泛型驗證器。
+    #[test]
+    fn verify_linearity_passes_matrix_transformation() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![0.0, 1.0]]));
+        let u = Vector::from_vec(vec![1.0, -2.0]);
+        let v = Vector::from_vec(vec![3.0, 0.5]);
+        assert!(verify_linearity(
+            |x| t.apply(x).unwrap(),
+            &u,
+            &v,
+            -1.5,
+            1e-9
+        ));
+    }
+
+    /// 驗收條件:識破仿射轉換 T(x) = 2x + 3。「線性」要求過原點,平移破壞它:
+    /// T(u+v) = 2(u+v)+3,但 T(u)+T(v) = 2(u+v)+6 —— 常數項被加了兩次。
+    #[test]
+    fn verify_linearity_rejects_affine_map() {
+        let affine = |x: &Vector| {
+            let shift = Vector::from_vec(vec![3.0; x.rows()]);
+            x.scale(2.0).add(&shift).unwrap()
+        };
+        let u = Vector::from_vec(vec![1.0, 2.0]);
+        let v = Vector::from_vec(vec![0.0, -1.0]);
+        assert!(!verify_linearity(affine, &u, &v, 2.0, 1e-9));
+    }
+
+    /// c = 1 時純量乘守恆對**任何**映射都退化成立(T(1·u) = 1·T(u) 是恆等式),
+    /// 仿射映射只能靠加法守恆抓 —— 證明兩個條件缺一不可、不能只查其中一個。
+    #[test]
+    fn verify_linearity_catches_affine_by_additivity_when_scaling_degenerates() {
+        let affine = |x: &Vector| {
+            let shift = Vector::from_vec(vec![3.0; x.rows()]);
+            x.scale(2.0).add(&shift).unwrap()
+        };
+        let u = Vector::from_vec(vec![1.0, 2.0]);
+        let v = Vector::from_vec(vec![0.0, -1.0]);
+        assert!(!verify_linearity(affine, &u, &v, 1.0, 1e-9));
+    }
+
+    /// u、v 不在同一空間 → u+v 根本不存在,談不上守恆 —— 沿 is_parallel 慣例回 false。
+    #[test]
+    fn verify_linearity_rejects_mismatched_spaces() {
+        let id = |x: &Vector| x.clone();
+        let u = Vector::from_vec(vec![1.0]);
+        let v = Vector::from_vec(vec![1.0, 2.0]);
+        assert!(!verify_linearity(id, &u, &v, 2.0, 1e-9));
     }
 }
