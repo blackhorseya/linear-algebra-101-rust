@@ -43,7 +43,14 @@
 - [x] 反矩陣 `inverse`(Gauss-Jordan 累乘基本矩陣 P = Eₖ⋯E₁,Theorem 2.3 直接寫成演算法;Theorem 2.2 代數性質以 laws 驗證)
 - [ ] 行列式 `determinant`
 
-### 5. 進階主題
+### 5. 線性轉換(Linear Transformation)
+- [x] 矩陣作為函數:`Transformation`(A 誘導 T_A: ℝⁿ → ℝᵐ)、定義域 / 對應域維度 `domain_dim` / `codomain_dim` / `dimensions`
+- [ ] 映射 `apply`(T_A(x) = Ax)
+- [ ] 線性性質驗證 `verify_linearity`(T(u+v) = T(u)+T(v)、T(cu) = c·T(u))
+- [ ] 單位 / 零轉換 `identity` / `zero`
+- [ ] Theorem 2.7:矩陣誘導的轉換必為線性(laws)
+
+### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)
 - [ ] LU 分解、特徵值 / 特徵向量 eigenvalue / eigenvector
 

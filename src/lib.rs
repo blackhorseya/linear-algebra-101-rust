@@ -15,6 +15,7 @@ pub mod matrix;
 pub mod predicate_set;
 pub mod span;
 pub mod system;
+pub mod transformation;
 pub mod vector;
 #[cfg(feature = "wasm")]
 pub mod wasm;
@@ -30,4 +31,5 @@ pub use matrix::Matrix;
 pub use predicate_set::PredicateSet;
 pub use span::{Span, affine_span, on_line, on_plane};
 pub use system::{RowKind, Solution, System};
+pub use transformation::Transformation;
 pub use vector::Vector;
