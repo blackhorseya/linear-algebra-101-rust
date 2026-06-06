@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
 import { Route as StandardMatrixRouteImport } from './routes/standard-matrix'
 import { Route as SpanRouteImport } from './routes/span'
+import { Route as RangeRouteImport } from './routes/range'
 import { Route as MultiplyRouteImport } from './routes/multiply'
 import { Route as LinearityRouteImport } from './routes/linearity'
 import { Route as InvertibilityRouteImport } from './routes/invertibility'
@@ -31,6 +32,11 @@ const StandardMatrixRoute = StandardMatrixRouteImport.update({
 const SpanRoute = SpanRouteImport.update({
   id: '/span',
   path: '/span',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RangeRoute = RangeRouteImport.update({
+  id: '/range',
+  path: '/range',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MultiplyRoute = MultiplyRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
+  '/range': typeof RangeRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
+  '/range': typeof RangeRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
+  '/range': typeof RangeRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/invertibility'
     | '/linearity'
     | '/multiply'
+    | '/range'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/invertibility'
     | '/linearity'
     | '/multiply'
+    | '/range'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/invertibility'
     | '/linearity'
     | '/multiply'
+    | '/range'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   InvertibilityRoute: typeof InvertibilityRoute
   LinearityRoute: typeof LinearityRoute
   MultiplyRoute: typeof MultiplyRoute
+  RangeRoute: typeof RangeRoute
   SpanRoute: typeof SpanRoute
   StandardMatrixRoute: typeof StandardMatrixRoute
   TransformRoute: typeof TransformRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/span'
       fullPath: '/span'
       preLoaderRoute: typeof SpanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/range': {
+      id: '/range'
+      path: '/range'
+      fullPath: '/range'
+      preLoaderRoute: typeof RangeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/multiply': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvertibilityRoute: InvertibilityRoute,
   LinearityRoute: LinearityRoute,
   MultiplyRoute: MultiplyRoute,
+  RangeRoute: RangeRoute,
   SpanRoute: SpanRoute,
   StandardMatrixRoute: StandardMatrixRoute,
   TransformRoute: TransformRoute,

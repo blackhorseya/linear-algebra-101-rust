@@ -58,6 +58,7 @@
 - [x] 映成判定 `is_onto`(Theorem 2.10:onto ⟺ rank(A) = m —— 全稱命題壓縮成一個數字比較;laws:onto ⟺ 全標準基底可達、高瘦必不映成、方陣 onto ⟺ 可逆(IMT 第十條等價條件))
 - [x] 不可達向量 `unreachable_vector`(不映成的具體見證:掃描 e₁…e_m 回第一支不在值域的 —— proper subspace 裝不下整組 spanning set,故見證必存在;映成時掃描空手而回,Option 與映成性嚴絲合縫)
 - [x] 值域的基底 `range_basis`(行對應定理:列運算保持行**之間**的線性關係,pivot 落在哪幾行、原矩陣的那幾支行就是獨立的 —— 索引問 RREF、內容問原始 A;laws 三條合起來即「是基底」的完整證明:獨立 + 住在值域 + 大小 = rank)
+- [x] 值域覆蓋互動圖解:拖動行向量看 Range(T) = Col(A) 從平面塌成直線,拖 w 看可達性即時判定,可在 [web 視覺化](#視覺化)操作(可達性 / 基底 / 映成 / 不可達見證全由 core 的 `range` 模組當場計算)
 - [x] 標準矩陣取樣互動圖解:選幾何規則(旋轉 / 反射 / 剪切⋯)看 T(e₁)、T(e₂) 直放成 A 的行,可在 [web 視覺化](#視覺化)操作(矩陣由 core 的 `standard_matrix` 當場取樣,「規則路徑 vs 矩陣路徑」兩路對帳)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 
@@ -88,7 +89,7 @@ cargo llvm-cov
 
 ## 視覺化
 
-`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」與「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)與「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
 
 WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
 

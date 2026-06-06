@@ -11,6 +11,11 @@ import init, {
   check_linearity,
   sample_standard_matrix,
   apply_rule,
+  range_basis,
+  range_contains,
+  is_onto,
+  unreachable_vector,
+  solve_for_input,
 } from "./wasm/linear_algebra_101.js";
 // `--target web` 的 glue 不會自動 import .wasm,要把它的 URL 交給 init()。
 // `?url` 讓 Vite 把這顆 wasm 當資產處理並回傳可 fetch 的網址(dev / build 皆然)。
@@ -130,6 +135,14 @@ const SOLUTION_NAMES: SolutionKind[] = [
 ];
 const ERO_NAMES: EroKind[] = ["initial", "swap", "scale", "addScaled"];
 
+/** 解 Ax = w「哪個輸入到得了 w」的結局(值域覆蓋頁)。 */
+export interface SolveResult {
+  /** 三種結局之一(編碼沿 EliminationTrace 的 solution_kind,共用對照表)。 */
+  kind: SolutionKind;
+  /** 唯一解時的輸入 x(滿足 T(x) = w);Infinite / Inconsistent 為 null。 */
+  x: [number, number] | null;
+}
+
 /** 初始化後可用的線代運算(全部在 Rust 算,JS 只是轉呼叫)。 */
 export interface Linalg {
   /** 2×2 矩陣 `[[a,b],[c,d]]` 作用在點 `(x,y)`,回傳變換後的 `[x', y']`。 */
@@ -220,6 +233,41 @@ export interface Linalg {
     x: number,
     y: number,
   ) => Float64Array;
+  /**
+   * Range(T_A) 的基底(core 的 `range_basis`,行向量攤平串接):長度 0 / 2 / 4
+   * 分別代表值域 = {0} / 直線 / ℝ² —— 支數 = rank,長度就把維度說完了。
+   */
+  rangeBasis: (a: number, b: number, c: number, d: number) => Float64Array;
+  /** w ∈ Range(T_A)?(core 的 `range_contains`:w 可達 ⟺ Ax = w 相容)。 */
+  rangeContains: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    wx: number,
+    wy: number,
+  ) => boolean;
+  /** T_A 映成嗎?(core 的 `is_onto`,Theorem 2.10:rank = m)。 */
+  isOnto: (a: number, b: number, c: number, d: number) => boolean;
+  /**
+   * 不可達向量的見證(core 的 `unreachable_vector`,標準基底掃描):
+   * 不映成 → `[x, y]`(某支 eᵢ);映成 → 空陣列(= None)。
+   */
+  unreachableVector: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+  ) => Float64Array;
+  /** 解 Ax = w:「哪個輸入到得了 w」—— 唯一解時連輸入 x 一起交出來。 */
+  solveForInput: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    wx: number,
+    wy: number,
+  ) => SolveResult;
 }
 
 /**
@@ -421,6 +469,18 @@ export function loadLinalg(): Promise<Linalg> {
       sample_standard_matrix(RULE_CODES[rule], param),
     applyRule: (rule, param, x, y) =>
       apply_rule(RULE_CODES[rule], param, x, y),
+    rangeBasis: range_basis,
+    rangeContains: range_contains,
+    isOnto: is_onto,
+    unreachableVector: unreachable_vector,
+    // [kind, x, y] → 物件:kind 走共用對照表;x 只在 Unique(1)時有意義。
+    solveForInput: (a, b, c, d, wx, wy) => {
+      const out = solve_for_input(a, b, c, d, wx, wy);
+      return {
+        kind: SOLUTION_NAMES[out[0]],
+        x: out[0] === 1 ? [out[1], out[2]] : null,
+      };
+    },
   }));
   return instance;
 }
