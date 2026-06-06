@@ -23,7 +23,7 @@
 //!
 //! [`System::is_consistent`]: crate::System::is_consistent
 
-use crate::{Transformation, Vector};
+use crate::{System, Transformation, Vector};
 
 impl Transformation {
     /// 值域的生成集合(generating set for the range):**Range(T) = Col(A) =
@@ -48,6 +48,30 @@ impl Transformation {
         (0..self.domain_dim())
             .map(|j| a.column(j).unwrap())
             .collect()
+    }
+
+    /// 值域成員判定:**w ∈ Range(T) ⟺ Ax = w 相容(consistent)**。
+    ///
+    /// 「w 可達」問的是「找得到輸入 x 使 T(x) = w」—— 而 T(x) = Ax,
+    /// 這句話與「方程組 Ax = w 有解」一字不差。於是成員判定**就是**
+    /// 一致性判定,委派 [`System::is_consistent`](crate::System::is_consistent)
+    /// (已存在就不重刻)。
+    ///
+    /// 題目要求「用 RREF 檢查增廣矩陣的矛盾列 [0…0 | d]」—— `is_consistent`
+    /// 用的是 Theorem 1.5 條件 (d)(rank(A) == rank([A|w])),第四單元的 law
+    /// `consistency_theorem_conditions_agree` 已證明兩判準等價,單一真相。
+    ///
+    /// `w.rows() != m`(w 不住在 codomain ℝᵐ)→ **false**:談不上可達
+    /// (沿 [`verify_linearity`](crate::verify_linearity) 的 bool 述詞慣例)。
+    /// 判零門檻 `epsilon` 由呼叫端指定(消去法引入捨入,浮點慣例)。
+    ///
+    /// 實作提示:[`System::new`](crate::System::new) **擁有**它的 A 與 b
+    /// (move 進去),所以要付兩次 clone —— 學習庫不追效能,語意正確優先。
+    /// 它在維度不合時回 `Err`,恰好就是你要折成 `false` 的那個情況:
+    /// `Result → bool` 的收法(`match` / `map_or` / `is_ok_and`)由你選。
+    pub fn range_contains(&self, w: &Vector, epsilon: f64) -> bool {
+        let a = self.matrix();
+        System::new(a.clone(), w.clone()).is_ok_and(|sys| sys.is_consistent(epsilon))
     }
 }
 
@@ -99,27 +123,84 @@ mod tests {
         assert!(gens[0].equals(&Vector::from_vec(vec![1.0, 0.0])));
         assert!(gens[1].is_zero(), "零行照收,不擅自剔除");
     }
+
+    /// 練習 2 題目場景:投影到 xy 平面(ℝ² → ℝ³ 的嵌入)—— 值域是 z = 0 平面。
+    /// (1,2,0) 落在平面上 → 可達;(1,2,3) 的 z ≠ 0 → 驗收點名的
+    /// 「w 不在行生成空間」案例。
+    #[test]
+    fn range_contains_classifies_xy_plane_image() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![0.0, 0.0],
+        ]));
+        assert!(t.range_contains(&Vector::from_vec(vec![1.0, 2.0, 0.0]), 1e-9));
+        assert!(!t.range_contains(&Vector::from_vec(vec![1.0, 2.0, 3.0]), 1e-9));
+    }
+
+    /// 行成比例(行空間塌成直線 span{(1,2)})—— 可達與否要消去後才看得出來,
+    /// 不是逐格比對:w = (3,6) = 3·(1,2) 在線上 → true;(1,1) 不在 → false。
+    #[test]
+    fn range_contains_needs_elimination_to_decide() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
+        assert!(t.range_contains(&Vector::from_vec(vec![3.0, 6.0]), 1e-9));
+        assert!(!t.range_contains(&Vector::from_vec(vec![1.0, 1.0]), 1e-9));
+    }
+
+    /// 零向量永遠可達:T(0) = A·0 = 0,任何轉換的值域都含原點 ——
+    /// 這正是「值域是子空間」最起碼的一條(子空間必過原點)。
+    #[test]
+    fn range_contains_zero_vector_for_any_transformation() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
+        assert!(t.range_contains(&Vector::new(2), 1e-9));
+    }
+
+    /// w 不住在 codomain ℝᵐ → 談不上可達,回 false(bool 述詞慣例,
+    /// 沿 verify_linearity / is_parallel:不在同一空間就不比)。
+    #[test]
+    fn range_contains_rejects_dimension_mismatch() {
+        let t = Transformation::new(Matrix::new(3, 2)); // codomain ℝ³
+        assert!(!t.range_contains(&Vector::from_vec(vec![1.0, 2.0]), 1e-9)); // w ∈ ℝ²
+    }
 }
 
 /// 值域與映成的 property test —— 本章的 laws 幾乎都是**跨練習交叉對帳**,
 /// 隨練習推進逐條累積(策略沿 transformation laws 的「先抽形狀、再抽內容」)。
 #[cfg(test)]
 mod laws {
-    use crate::{Matrix, Transformation};
+    use crate::{Matrix, Transformation, Vector};
     use proptest::prelude::*;
 
-    /// 隨機形狀(1..=4 × 1..=4)、元素為 [-10, 10] 整數的矩陣
-    /// (f64 下加減乘完全精確;形狀也隨機,涵蓋 ℝⁿ → ℝᵐ 各種組合)。
-    fn int_matrix_any_shape() -> impl Strategy<Value = Matrix> {
-        (1usize..=4, 1usize..=4).prop_flat_map(|(rows, cols)| {
-            prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
-                Matrix::from_rows(
-                    grid.into_iter()
-                        .map(|row| row.into_iter().map(|v| v as f64).collect())
-                        .collect(),
-                )
-            })
+    /// 消去法判零門檻(整數輸入的殘差遠低於此,沿 elimination 的 REF_EPSILON)。
+    const EPS: f64 = 1e-9;
+
+    /// 固定 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下加減乘完全精確)。
+    fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
+            Matrix::from_rows(
+                grid.into_iter()
+                    .map(|row| row.into_iter().map(|v| v as f64).collect())
+                    .collect(),
+            )
         })
+    }
+
+    /// 長度 `n`、元素為 [-10, 10] 整數的向量。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 隨機形狀(1..=4 × 1..=4)的整數矩陣 —— 涵蓋 ℝⁿ → ℝᵐ 各種組合。
+    fn int_matrix_any_shape() -> impl Strategy<Value = Matrix> {
+        (1usize..=4, 1usize..=4).prop_flat_map(|(rows, cols)| int_matrix(rows, cols))
+    }
+
+    /// 隨機形狀的整數矩陣,連同一支**住在定義域 ℝⁿ** 的輸入向量
+    /// (n 在同一次 flat_map 裡共用,沿 transformation laws 的依賴式兩階段抽樣)。
+    fn int_matrix_with_input_vector() -> impl Strategy<Value = (Matrix, Vector)> {
+        (1usize..=4, 1usize..=4)
+            .prop_flat_map(|(rows, cols)| (int_matrix(rows, cols), int_vector(cols)))
     }
 
     proptest! {
@@ -132,6 +213,27 @@ mod laws {
             prop_assert_eq!(gens.len(), t.domain_dim(), "一行一支生成元素");
             for g in &gens {
                 prop_assert_eq!(g.rows(), t.codomain_dim(), "生成元素住在 ℝᵐ");
+            }
+        }
+
+        // 影像必可達(練習 2 的定義律):∀ x ∈ ℝⁿ,T(x) ∈ Range(T) ——
+        // 植入法:w := T(x) 依建構即在值域,range_contains 必須看得出來。
+        // (值域是「所有輸出」,輸出當然在值域 —— 但 range_contains 走的是
+        //  消去法的獨立路徑,兩條路會合才是測試的意義。)
+        #[test]
+        fn image_is_always_reachable((a, x) in int_matrix_with_input_vector()) {
+            let t = Transformation::new(a);
+            let w = t.apply(&x).unwrap(); // x 依建構住在定義域,unwrap 安全
+            prop_assert!(t.range_contains(&w, EPS), "T(x) 不在值域?x={x:?}");
+        }
+
+        // 生成集合住在值域(練習 1 ↔ 2 交叉對帳):range_generating_set 的
+        // 每支行向量都通過 range_contains —— aⱼ = T(eⱼ) 本來就是一個輸出。
+        #[test]
+        fn generating_set_lives_in_range(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            for g in t.range_generating_set() {
+                prop_assert!(t.range_contains(&g, EPS), "行向量不在自己張成的空間?");
             }
         }
     }
