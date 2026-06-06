@@ -60,7 +60,8 @@ core(`src/` 的數學模組)是 [linear-algebra-101](https://github.com/blackhor
 
 `web/` 是 core 的互動視覺化前端(React 19 + Vite + TanStack Router/Query + Tailwind v4),透過 WASM 呼叫 core 做「矩陣作為 2D 線性變換」等視覺化。幾條鐵律:
 
-- **core 零改動**:WASM binding 全鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`,`lib.rs` 以 gated `pub mod wasm` 宣告)。`wasm-bindgen` 是 optional dep + `dep:` feature,沒開 `wasm` feature 時不進依賴樹 —— `cargo test` / `task check` 完全不受影響。新增視覺化功能只在 binding 層轉呼叫 core,**不為了前端去改 core**。
+- **core 零改動**:WASM binding 全鎖在 `#[cfg(feature = "wasm")]`(`src/wasm/`,`lib.rs` 以 gated `pub mod wasm` 宣告)。`wasm-bindgen` 是 optional dep + `dep:` feature,沒開 `wasm` feature 時不進依賴樹 —— `cargo test` / `task check` 完全不受影響。新增視覺化功能只在 binding 層轉呼叫 core,**不為了前端去改 core**。
+- **binding 一章一支子模組**:`src/wasm/` 沿 core「一個概念一個模組」的慣例,每個視覺化章一支(`transform` / `multiply` / `elimination` / `inverse` / `linearity` / `standard_matrix` / `range`),`mod.rs` 只負責 `mod` + `pub use`(鏡像 `lib.rs`),跨章共用工具收在私有的 `helpers.rs`。`#[wasm_bindgen]` 匯出攤平在套件根層、與模組巢狀無關,開新章直接加新檔即可。**wasm 的測試 / lint 不在 `task check` 內**,要顯式跑 `cargo test --features wasm` 與 `cargo clippy --features wasm --all-targets -- -D warnings`。
 - **計算單一真相在 Rust**:JS 只負責 Canvas 繪圖與互動,每個結果都由 core 計算,不要在 JS 重寫任何線代。
 - **最小依賴**:binding 只加 `wasm-bindgen`,前端不引繪圖庫(純 Canvas 2D)—— 延續 core 的精神。
 - **建置**:`task wasm:build` 產物到 `web/src/lib/wasm`(已 gitignore,衍生物不入版控)。需 **wasm-pack 0.15+**(舊版內建的 wasm-opt 看不懂新 wasm-bindgen 產的多 table 區段)。
