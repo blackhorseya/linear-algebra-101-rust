@@ -76,6 +76,18 @@ export function dot(ctx: CanvasRenderingContext2D, p: Pt, color: string) {
   ctx.restore()
 }
 
+/** 空心圓環:標記「另一條計算路徑」的落點 —— 與箭頭尖端重合即定理成立
+ *(linearity 的守恆律、standard-matrix 的規則 vs 矩陣兩用)。 */
+export function drawRing(ctx: CanvasRenderingContext2D, p: Pt, color: string) {
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(p[0], p[1], 7, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+}
+
 export function label(ctx: CanvasRenderingContext2D, text: string, p: Pt, color: string) {
   ctx.save()
   ctx.fillStyle = color

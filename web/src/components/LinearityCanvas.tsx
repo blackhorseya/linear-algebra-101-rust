@@ -6,6 +6,7 @@ import {
   drawArrow,
   drawImageSegment,
   drawReferenceGrid,
+  drawRing,
   GRID_N,
   HIT_PX,
   hitTest,
@@ -49,17 +50,6 @@ const COLORS = {
   guide: '#64748b', // slate-500(平行四邊形虛線導引)
   ring: '#f8fafc', // slate-50(T(u)+T(v) / k·T(u):右邊各自過 T、再合成 —— 守恆律 = 圓環套住箭頭)
 } as const
-
-/** 空心圓環:標記「另一條計算路徑」的落點 —— 與箭頭尖端重合即守恆律成立。 */
-function drawRing(ctx: CanvasRenderingContext2D, p: Pt, color: string) {
-  ctx.save()
-  ctx.strokeStyle = color
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.arc(p[0], p[1], 7, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.restore()
-}
 
 /** 虛線輔助線(平行四邊形的另外兩邊)。 */
 function dashedLine(ctx: CanvasRenderingContext2D, p0: Pt, p1: Pt, color: string) {

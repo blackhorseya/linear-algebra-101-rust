@@ -20,6 +20,11 @@ const FEATURES = [
     desc: '拖動 u、v 看 shear / 投影下的影像:T(u+v) 與 T(u)+T(v) 永遠在同一點會合 —— Theorem 2.7「矩陣誘導必線性」看得見。',
   },
   {
+    to: '/standard-matrix',
+    title: '標準矩陣取樣',
+    desc: '選幾何規則(旋轉、反射、剪切⋯),看 e₁、e₂ 的影像被取樣、直放成矩陣的行 —— Theorem 2.9「線性轉換必由唯一矩陣誘導」現場上演。',
+  },
+  {
     to: '/span',
     title: '張成 Span',
     desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
