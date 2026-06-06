@@ -48,7 +48,7 @@
 - [x] 映射 `apply`(T_A(x) = Ax,委派 `multiply_vector`,維度檢查隨之繼承)
 - [x] 線性性質驗證 `verify_linearity`(T(u+v) = T(u)+T(v)、T(cu) = c·T(u);泛型 `Fn(&Vector) -> Vector` 收任意映射,可識破仿射轉換)
 - [x] 單位 / 零轉換 `identity` / `zero`(I(x) = x、T₀(x) = 0;零轉換不必方陣,0 ∈ codomain ℝᵐ)
-- [ ] Theorem 2.7:矩陣誘導的轉換必為線性(laws)
+- [x] Theorem 2.7:矩陣誘導的轉換必為線性(laws,proptest 隨機掃 —— 整數策略配精確 equals、浮點策略配 1e-9 容差)
 
 ### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)

@@ -281,3 +281,87 @@ mod tests {
         assert!(verify_linearity(|x| z.apply(x).unwrap(), &u, &v, 2.5, 1e-9));
     }
 }
+
+/// Theorem 2.7(**矩陣誘導的轉換必為線性**)的全稱驗證。
+///
+/// `verify_linearity` 在單一樣本上只是「見證」;這裡用 proptest 升級成 for all
+/// 形式:隨機產生矩陣 A 與樣本 (u, v, c),每一組都必須通過線性檢查 ——
+/// 預設 256 組(比題目要求的 10 組多 25 倍),失敗會自動 shrink 成最小反例。
+///
+/// 沿 repo 慣例,兩種策略對應兩種比較:
+/// - 整數策略:小整數在 f64 下加減乘**完全精確** → epsilon 可給 0.0(精確相等)。
+/// - 真實浮點策略:捨入誤差使定律只在容差內成立 → `1e-9`。
+#[cfg(test)]
+mod laws {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// 固定 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下加減乘完全精確)。
+    fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-10i64..=10, cols), rows).prop_map(|grid| {
+            Matrix::from_rows(
+                grid.into_iter()
+                    .map(|row| row.into_iter().map(|v| v as f64).collect())
+                    .collect(),
+            )
+        })
+    }
+
+    /// 長度 `n`、元素為 [-10, 10] 整數的向量。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 固定 `rows×cols`、元素為 [-100, 100] 真實浮點的矩陣。
+    fn real_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
+        prop::collection::vec(prop::collection::vec(-100.0f64..100.0, cols), rows)
+            .prop_map(Matrix::from_rows)
+    }
+
+    /// 長度 `n`、元素為 [-100, 100] 真實浮點的向量。
+    fn real_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-100.0f64..100.0, n).prop_map(Vector::from_vec)
+    }
+
+    proptest! {
+        // Theorem 2.7(整數版,精確):任何 3×4 小整數矩陣誘導的 T_A 都通過
+        // 線性檢查。整數運算在 f64 下完全精確 —— epsilon 給 0.0,一絲不差。
+        #[test]
+        fn theorem_2_7_matrix_transformations_are_linear_exact(
+            a in int_matrix(3, 4),
+            u in int_vector(4),
+            v in int_vector(4),
+            c in -10i64..=10,
+        ) {
+            let t = Transformation::new(a);
+            prop_assert!(verify_linearity(
+                |x| t.apply(x).unwrap(),
+                &u,
+                &v,
+                c as f64,
+                0.0
+            ));
+        }
+
+        // Theorem 2.7(真實浮點版,容差):同一條定理在真實浮點下也成立,但
+        // T(u+v) 與 T(u)+T(v) 的捨入路徑不同,只能在 1e-9 容差內相等 ——
+        // 與整數版合起來,正是「整數配精確、浮點配近似」的慣例本身。
+        #[test]
+        fn theorem_2_7_holds_for_real_matrices_within_tolerance(
+            a in real_matrix(3, 4),
+            u in real_vector(4),
+            v in real_vector(4),
+            c in -100.0f64..100.0,
+        ) {
+            let t = Transformation::new(a);
+            prop_assert!(verify_linearity(
+                |x| t.apply(x).unwrap(),
+                &u,
+                &v,
+                c,
+                1e-9
+            ));
+        }
+    }
+}
