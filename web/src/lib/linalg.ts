@@ -6,6 +6,9 @@ import init, {
   multiply_expand,
   eliminate,
   invert_trace,
+  add_vectors,
+  scale_vector,
+  check_linearity,
 } from "./wasm/linear_algebra_101.js";
 // `--target web` 的 glue 不會自動 import .wasm,要把它的 URL 交給 init()。
 // `?url` 讓 Vite 把這顆 wasm 當資產處理並回傳可 fetch 的網址(dev / build 皆然)。
@@ -155,6 +158,30 @@ export interface Linalg {
    * 的 n×n 矩陣。可逆時終態 P = A⁻¹;奇異時終態 working = RREF(A)(Theorem 2.3)。
    */
   invertTrace: (data: number[], n: number) => InverseTraceJS;
+  /** 2D 向量加法 u + v(core 的 `Vector::add`),回傳 `[x, y]`。 */
+  addVectors: (
+    ux: number,
+    uy: number,
+    vx: number,
+    vy: number,
+  ) => Float64Array;
+  /** 2D 向量純量乘 k·u(core 的 `Vector::scale`),回傳 `[x, y]`。 */
+  scaleVector: (x: number, y: number, k: number) => Float64Array;
+  /**
+   * 2×2 矩陣誘導的 T_A 在樣本 (u, v, k) 上的線性檢查:T(u+v) = T(u)+T(v) 且
+   * T(ku) = k·T(u)。委派 core 的 `verify_linearity`(Theorem 2.7:矩陣誘導必過)。
+   */
+  checkLinearity: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    ux: number,
+    uy: number,
+    vx: number,
+    vy: number,
+    k: number,
+  ) => boolean;
 }
 
 /**
@@ -349,6 +376,9 @@ export function loadLinalg(): Promise<Linalg> {
     multiplyExpand: runMultiplyExpand,
     eliminate: runEliminate,
     invertTrace: runInvertTrace,
+    addVectors: add_vectors,
+    scaleVector: scale_vector,
+    checkLinearity: check_linearity,
   }));
   return instance;
 }

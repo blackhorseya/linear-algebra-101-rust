@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
 import { Route as SpanRouteImport } from './routes/span'
 import { Route as MultiplyRouteImport } from './routes/multiply'
+import { Route as LinearityRouteImport } from './routes/linearity'
 import { Route as InvertibilityRouteImport } from './routes/invertibility'
 import { Route as EliminationRouteImport } from './routes/elimination'
 import { Route as IndexRouteImport } from './routes/index'
@@ -29,6 +30,11 @@ const SpanRoute = SpanRouteImport.update({
 const MultiplyRoute = MultiplyRouteImport.update({
   id: '/multiply',
   path: '/multiply',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LinearityRoute = LinearityRouteImport.update({
+  id: '/linearity',
+  path: '/linearity',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvertibilityRoute = InvertibilityRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
+  '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
+  '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
+  '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/span': typeof SpanRoute
   '/transform': typeof TransformRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/elimination'
     | '/invertibility'
+    | '/linearity'
     | '/multiply'
     | '/span'
     | '/transform'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/elimination'
     | '/invertibility'
+    | '/linearity'
     | '/multiply'
     | '/span'
     | '/transform'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/elimination'
     | '/invertibility'
+    | '/linearity'
     | '/multiply'
     | '/span'
     | '/transform'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EliminationRoute: typeof EliminationRoute
   InvertibilityRoute: typeof InvertibilityRoute
+  LinearityRoute: typeof LinearityRoute
   MultiplyRoute: typeof MultiplyRoute
   SpanRoute: typeof SpanRoute
   TransformRoute: typeof TransformRoute
@@ -129,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/multiply'
       fullPath: '/multiply'
       preLoaderRoute: typeof MultiplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/linearity': {
+      id: '/linearity'
+      path: '/linearity'
+      fullPath: '/linearity'
+      preLoaderRoute: typeof LinearityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invertibility': {
@@ -159,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EliminationRoute: EliminationRoute,
   InvertibilityRoute: InvertibilityRoute,
+  LinearityRoute: LinearityRoute,
   MultiplyRoute: MultiplyRoute,
   SpanRoute: SpanRoute,
   TransformRoute: TransformRoute,
