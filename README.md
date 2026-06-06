@@ -55,6 +55,7 @@
 - [x] 單位 / 零轉換的標準矩陣對帳(identity_matrix / zero_matrix 不另刻 —— 就是第二單元的 `Matrix::identity` / `Matrix::new`;構造器對「行為」取樣重新發現同一個矩陣,零映射的 m 與 n 解耦)
 - [x] 值域的生成集合 `range_generating_set`(Range(T) = Col(A):每個輸出 T(x) = x₁a₁ + ⋯ + xₙaₙ 都是行向量的線性組合,行向量整組就是值域的生成集合,各自住在 codomain ℝᵐ)
 - [x] 值域成員判定 `range_contains`(w ∈ Range(T) ⟺ Ax = w 相容 —— 成員判定就是一致性判定,委派 `System::is_consistent`;w 不在 codomain 回 false)
+- [x] 映成判定 `is_onto`(Theorem 2.10:onto ⟺ rank(A) = m —— 全稱命題壓縮成一個數字比較;laws:onto ⟺ 全標準基底可達、高瘦必不映成、方陣 onto ⟺ 可逆(IMT 第十條等價條件))
 - [x] 標準矩陣取樣互動圖解:選幾何規則(旋轉 / 反射 / 剪切⋯)看 T(e₁)、T(e₂) 直放成 A 的行,可在 [web 視覺化](#視覺化)操作(矩陣由 core 的 `standard_matrix` 當場取樣,「規則路徑 vs 矩陣路徑」兩路對帳)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 

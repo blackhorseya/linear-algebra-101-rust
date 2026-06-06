@@ -73,6 +73,23 @@ impl Transformation {
         let a = self.matrix();
         System::new(a.clone(), w.clone()).is_ok_and(|sys| sys.is_consistent(epsilon))
     }
+
+    /// 映成(onto)判定:**T 映成 ⟺ rank(A) = m**(Theorem 2.10)。
+    ///
+    /// 「映成」是把成員判定全稱化:不只某個 w 可達,而是 **codomain 的每個
+    /// w 都可達**(Range(T) = ℝᵐ)。逐 w 檢查不可能(ℝᵐ 不可數),Theorem 2.10
+    /// 把它壓縮成一個數字的比較:Col(A) 是 ℝᵐ 的子空間,「子空間 = 全空間」
+    /// ⟺ 「維度拉滿」—— 而 Col(A) 的維度就是 rank(第四單元的定義)。
+    ///
+    /// 題目驗收的「n < m 必不映成」**不需特判**:rank ≤ min(m, n) < m,
+    /// 數學自己把這個 case 排掉了 —— ℝ² 的兩支行向量怎麼張也張不滿 ℝ³。
+    ///
+    /// 實作提示:一行 —— [`Matrix::rank`](crate::Matrix::rank) 對上哪個維度?
+    /// 5-1 的老陷阱:m 是 `rows`(codomain),用轉換自身的詞彙講。
+    pub fn is_onto(&self, epsilon: f64) -> bool {
+        let a = self.matrix();
+        a.rank(epsilon) == self.codomain_dim()
+    }
 }
 
 #[cfg(test)]
@@ -162,6 +179,45 @@ mod tests {
         let t = Transformation::new(Matrix::new(3, 2)); // codomain ℝ³
         assert!(!t.range_contains(&Vector::from_vec(vec![1.0, 2.0]), 1e-9)); // w ∈ ℝ²
     }
+
+    /// 練習 3 題目原例(一):RREF 為 I₃ 的方陣 —— rank = 3 = m,映成。
+    #[test]
+    fn is_onto_accepts_full_rank_square() {
+        let t = Transformation::new(Matrix::identity(3));
+        assert!(t.is_onto(1e-9));
+    }
+
+    /// 練習 3 題目原例(二):3×2(ℝ² → ℝ³)必不映成 —— 兩支行向量
+    /// 怎麼張也張不滿 ℝ³(rank ≤ 2 < 3),不需特判、數學自己排掉。
+    #[test]
+    fn is_onto_rejects_map_into_higher_dimension() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![0.0, 0.0],
+        ]));
+        assert!(!t.is_onto(1e-9));
+    }
+
+    /// 壓縮方向(ℝ³ → ℝ²)可以映成:投影丟掉 z,但 x、y 全保留 ——
+    /// rank = 2 = m。注意它**不是**一對一(z 軸整條被吸到原點),
+    /// onto 與 one-to-one 是兩個獨立的性質,5-4 會合流到可逆性。
+    #[test]
+    fn is_onto_accepts_projection_onto_smaller_codomain() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+        ]));
+        assert!(t.is_onto(1e-9));
+    }
+
+    /// 方陣也可能不映成:行成比例 → 值域塌成直線(rank 1 < 2),
+    /// ℝ² 裡直線之外的點全都不可達。
+    #[test]
+    fn is_onto_rejects_rank_deficient_square() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
+        assert!(!t.is_onto(1e-9));
+    }
 }
 
 /// 值域與映成的 property test —— 本章的 laws 幾乎都是**跨練習交叉對帳**,
@@ -203,6 +259,12 @@ mod laws {
             .prop_flat_map(|(rows, cols)| (int_matrix(rows, cols), int_vector(cols)))
     }
 
+    /// 高瘦矩陣(rows > cols):rows = cols + extra,**依建構**保證比寬還高 ——
+    /// 與 ero 策略的「dst ≠ src 依建構成立」同一招,免去 prop_assume 丟樣本。
+    fn tall_int_matrix() -> impl Strategy<Value = Matrix> {
+        (1usize..=3, 1usize..=3).prop_flat_map(|(cols, extra)| int_matrix(cols + extra, cols))
+    }
+
     proptest! {
         // 形狀律:生成集合恆有 n(domain_dim)支、每支住在 codomain ℝᵐ ——
         // 「n 行、每行 m 個分量」用轉換自身的詞彙重讀一遍。
@@ -235,6 +297,35 @@ mod laws {
             for g in t.range_generating_set() {
                 prop_assert!(t.range_contains(&g, EPS), "行向量不在自己張成的空間?");
             }
+        }
+
+        // onto ⟺ 全標準基底可達(練習 2 ↔ 3 交叉對帳):Range 蓋滿 ℝᵐ ⟺
+        // 連 {e₁…e_m} 都收得進來(⟸ 因為子空間對張成封閉:裝得下整組
+        // spanning set 就裝得下整個 ℝᵐ)。這條 law 正是練習 4 掃描策略的根據。
+        #[test]
+        fn onto_iff_every_standard_basis_vector_reachable(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            let m = t.codomain_dim();
+            let all_reachable = (0..m)
+                .all(|i| t.range_contains(&Vector::standard(m, i).unwrap(), EPS));
+            prop_assert_eq!(t.is_onto(EPS), all_reachable);
+        }
+
+        // 高瘦必不映成(Theorem 2.10 的維度限制半邊):rows > cols ⟹
+        // rank ≤ cols < rows = m,n 支行向量張不滿更高維的 ℝᵐ。
+        #[test]
+        fn taller_than_wide_is_never_onto(a in tall_int_matrix()) {
+            let t = Transformation::new(a);
+            prop_assert!(!t.is_onto(EPS));
+        }
+
+        // IMT 接線(方陣):onto ⟺ 可逆 —— rank = n ⟺ RREF = Iₙ,
+        // 兩個述詞走兩條獨立路徑(rank 計數 vs RREF 比對)必須給同一個答案。
+        // 隨機方陣大多可逆、偶有奇異,兩個方向都會被踩到。
+        #[test]
+        fn square_transformation_onto_iff_invertible(a in int_matrix(3, 3)) {
+            let t = Transformation::new(a.clone());
+            prop_assert_eq!(t.is_onto(EPS), a.is_invertible(EPS));
         }
     }
 }
