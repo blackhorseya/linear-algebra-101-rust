@@ -398,6 +398,26 @@ mod tests {
         assert!(y.equals(&Vector::from_vec(vec![3.0, -5.0])));
     }
 
+    /// 單元 5-2 練習 4(一):單位轉換 I(x) = x 的標準矩陣就是 Iₙ。
+    /// 題目要的 identity_matrix(n) 不必新刻 —— Matrix::identity 第二單元就有,
+    /// 這裡對帳:構造器從「什麼都不動」的規則重新發現同一個矩陣(單一真相)。
+    #[test]
+    fn standard_matrix_of_identity_map_is_identity_matrix() {
+        let i = |x: &Vector| x.clone();
+        let a = standard_matrix(3, i).unwrap();
+        assert!(a.equals(&Matrix::identity(3)));
+    }
+
+    /// 單元 5-2 練習 4(二):零轉換 T₀(x) = 0 的標準矩陣是零矩陣(= Matrix::new)。
+    /// 陷阱:closure 只說「一切都到 ℝᵐ 的原點」—— m 由輸出導出、n 是取樣次數,
+    /// 兩者解耦,挑 m ≠ n 的形狀(如 2×4)才驗得到「零轉換不必方陣」。
+    #[test]
+    fn standard_matrix_of_zero_map_is_zero_matrix() {
+        let zero = |_: &Vector| Vector::new(2); // codomain 維度 m = 2,與 n = 4 解耦
+        let a = standard_matrix(4, zero).unwrap();
+        assert!(a.equals(&Matrix::new(2, 4)));
+    }
+
     /// 輸出維度忽長忽短的「映射」根本不是到同一個 ℝᵐ 的函數 → DimensionMismatch。
     /// 這支 closure 對 e₁ 吐 ℝ¹、對 e₂ 吐 ℝ²(輸出長度 = 非零分量位置 + 1)。
     #[test]

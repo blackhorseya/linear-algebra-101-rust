@@ -52,6 +52,7 @@
 - [x] 標準矩陣 `standard_matrix`(Theorem 2.9:對任意映射做標準基底取樣,T(eⱼ) 直放為 A 的第 j 行;codomain 維度從輸出導出,非線性映射取樣出的矩陣重現不了原函數)
 - [x] 幾何轉換的標準矩陣:x 軸反射(example test 示範「幾何規則 → `standard_matrix` → 矩陣數值」的工作流 —— 寫規則,讓構造器去發現 [[1, 0], [0, −1]])
 - [x] Theorem 2.9 laws:標準矩陣**存在且唯一**(round-trip 重建 == 誘導矩陣(整數精確)、T(v) = Av 對任意 v(浮點 1e-9);維度也隨機 —— `prop_flat_map` 先抽形狀再抽內容,涵蓋 ℝⁿ → ℝᵐ 各種組合)
+- [x] 單位 / 零轉換的標準矩陣對帳(identity_matrix / zero_matrix 不另刻 —— 就是第二單元的 `Matrix::identity` / `Matrix::new`;構造器對「行為」取樣重新發現同一個矩陣,零映射的 m 與 n 解耦)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 
 ### 6. 進階主題
