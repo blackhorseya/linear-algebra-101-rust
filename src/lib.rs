@@ -13,6 +13,7 @@ pub mod independence;
 pub mod inverse;
 pub mod matrix;
 pub mod predicate_set;
+pub mod range;
 pub mod span;
 pub mod system;
 pub mod transformation;

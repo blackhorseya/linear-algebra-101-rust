@@ -43,6 +43,15 @@ impl Transformation {
         Transformation { matrix }
     }
 
+    /// 此轉換的標準矩陣 A —— [`new`](Transformation::new)(A ↦ T_A)的反向讀取。
+    ///
+    /// 之所以是個**良定義**的數學操作,靠的是 Theorem 2.9:T ↦ A 唯一,
+    /// 「轉換的標準矩陣」才有唯一答案可回。`range` 模組(單元 5-3)跨在本模組外,
+    /// 經此通道把 A 餵給 rank / 行抽取等矩陣積木。借用而非拷貝:呼叫端只需讀。
+    pub fn matrix(&self) -> &Matrix {
+        &self.matrix
+    }
+
     /// 定義域(domain)維度 n:輸入向量 x ∈ ℝⁿ。
     ///
     /// 練習 1 的核心陷阱:n 對應矩陣的「行數」還是「列數」?
