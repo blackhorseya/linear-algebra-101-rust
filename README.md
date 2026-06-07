@@ -46,6 +46,7 @@
 - [x] 三角矩陣快速路徑 `is_upper_triangular` / `is_lower_triangular` / `determinant_triangular`(Theorem 3.2:三角方陣 det = 對角線乘積 O(n);兩述詞獨立實作、非方陣恆 false,fast path 不適用回 None 而非錯誤;laws:上下三角各與定義版對帳、轉置對偶 lower(A) ⟺ upper(Aᵀ))
 - [x] 行列式(實用版,得正名)`determinant`(Theorem 3.3:Gaussian forward 消去 O(n³),只准 swap(記翻號 (−1)^r)與 add(det 不變)、絕不 scale;奇異時 early return 精確 0.0、自換不翻號;laws:與定義版及三角 fast path 對帳 —— 三路對帳網閉合,12×12 釘 O(n³) vs O(n!) 的結構性差距)
 - [x] 行列式三大代數性質 laws(Theorem 3.4:(a) 可逆 ⟺ det ≠ 0(與可逆矩陣章會師)、(b) det(AB) = det A · det B(乘法積性,量級放大需**相對容差**)、(c) det Aᵀ = det A(行列對稱)—— 本章 laws 收官,把 det 與 IMT、乘法、轉置縫起來)
+- [x] 基本矩陣的行列式 laws(Theorem 3.3(d):det E 規律 swap → −1、scale(c) → c、add → 1(E 從 I 經一次 ERO 套三部曲)+ det(EA) = det E · det A —— elimination 的 ERO、inverse 的基本矩陣、determinant 三章會師;單元 6-1 其餘題目皆 5-5 已收,零新 API 純 reuse)
 
 ### 5. 線性轉換(Linear Transformation)
 - [x] 矩陣作為函數:`Transformation`(A 誘導 T_A: ℝⁿ → ℝᵐ)、定義域 / 對應域維度 `domain_dim` / `codomain_dim` / `dimensions`

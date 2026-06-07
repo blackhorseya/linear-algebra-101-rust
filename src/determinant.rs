@@ -610,6 +610,32 @@ mod tests {
         );
         assert!((a.determinant(1e-9).unwrap() - 13.0).abs() < 1e-6);
     }
+
+    /// 6-1(Theorem 3.3(d) 規律):交換型基本矩陣 det = −1 ——
+    /// E 從 I(det = 1)經一次 swap(變號)而來。permutation 矩陣的消去
+    /// factor 全零 → 零殘差,可精確比較。
+    #[test]
+    fn determinant_of_elementary_swap_is_minus_one() {
+        let e = Matrix::elementary_swap(3, 0, 2).unwrap();
+        assert_eq!(e.determinant(1e-9).unwrap(), -1.0);
+    }
+
+    /// 伸縮型基本矩陣 det = c(I 經一次 scale → det 乘 c)。對角矩陣
+    /// 消去是 no-op → 精確。
+    #[test]
+    fn determinant_of_elementary_scale_is_c() {
+        let e = Matrix::elementary_scale(3, 1, 5.0).unwrap();
+        assert_eq!(e.determinant(1e-9).unwrap(), 5.0);
+    }
+
+    /// 倍加型基本矩陣 det = 1(I 經一次 add → det 不變)。
+    /// c 挑 0.5:|c| < 1 不觸發 partial pivoting 換列、0.5 二進位精確
+    /// → 全程零殘差,可精確比較(隨機 c 的容差版在 laws)。
+    #[test]
+    fn determinant_of_elementary_add_scaled_is_one() {
+        let e = Matrix::elementary_add_scaled(3, 2, 0, 0.5).unwrap();
+        assert_eq!(e.determinant(1e-9).unwrap(), 1.0);
+    }
 }
 
 /// 行列式章的 property test —— 主軸是「同一個數,三種算法」,laws 隨練習
@@ -716,6 +742,29 @@ mod laws {
     /// n 在同一次 flat_map 共用,依建構保證可乘(沿 composable_pair 的招)。
     fn square_int_matrix_pair() -> impl Strategy<Value = (Matrix, Matrix)> {
         (1usize..=4).prop_flat_map(|n| (int_matrix(n, n), int_matrix(n, n)))
+    }
+
+    /// 隨機 n×n 基本矩陣連同其**理論 det**(Theorem 3.3(d) 證明過程的規律):
+    /// E 從 I(det = 1)經一次 ERO,套 ERO 三部曲直接推出 —— swap → −1、
+    /// scale(c) → c、add → 1。索引依建構合法(modular shift)、scale 的 c
+    /// 非零 → inverse 章三支構造子的 unwrap 全安全。呼叫端給 n ≥ 2
+    /// (swap / add 要兩個相異列)。
+    fn elementary_with_expected_det(n: usize) -> impl Strategy<Value = (Matrix, f64)> {
+        prop_oneof![
+            (0..n, 0..n - 1).prop_map(move |(i, off)| {
+                let e = Matrix::elementary_swap(n, i, (i + 1 + off) % n).unwrap();
+                (e, -1.0)
+            }),
+            (0..n, prop_oneof![-5i64..=-1, 1i64..=5]).prop_map(move |(i, c)| {
+                let e = Matrix::elementary_scale(n, i, c as f64).unwrap();
+                (e, c as f64)
+            }),
+            (0..n, 0..n - 1, -5i64..=5).prop_map(move |(dst, off, c)| {
+                let e =
+                    Matrix::elementary_add_scaled(n, dst, (dst + 1 + off) % n, c as f64).unwrap();
+                (e, 1.0)
+            }),
+        ]
     }
 
     proptest! {
@@ -900,6 +949,34 @@ mod laws {
             let det_t = m.transpose().determinant(EPS).unwrap();
             let det = m.determinant(EPS).unwrap();
             prop_assert!((det_t - det).abs() <= EQ_EPS);
+        }
+
+        // ───── 6-1(Theorem 3.3(d)):基本矩陣的 det —— 零新 API,純 reuse ─────
+
+        // det E 規律:E 從 I(det = 1)經一次 ERO 而來,ERO 三部曲直接給出
+        // swap → −1、scale(c) → c、add → 1 —— 理論值由策略隨 E 一起回傳,
+        // 與 Gaussian 實算對帳(add 的 E 在 partial pivoting 下可能真走除法
+        // → 殘差,統一 EQ_EPS;精確版的具體案例在 example tests)。
+        #[test]
+        fn elementary_determinant_follows_the_rule(
+            (e, expected) in (2usize..=4).prop_flat_map(elementary_with_expected_det),
+        ) {
+            prop_assert!((e.determinant(EPS).unwrap() - expected).abs() <= EQ_EPS);
+        }
+
+        // Theorem 3.3(d) 本體:det(EA) = det E · det A —— elimination 的 ERO
+        // 語意、inverse 的基本矩陣、本章的 det 三章在此會師。它是練 5(b)
+        // 全積性 det(AB) 的「單步版」:教材的證明順序正是先 (d)、再把任意
+        // 可逆矩陣拆成基本矩陣連乘疊出一般積性。
+        #[test]
+        fn determinant_of_elementary_product_is_multiplicative(
+            (e, a) in (2usize..=4)
+                .prop_flat_map(|n| (elementary_with_expected_det(n), int_matrix(n, n)))
+                .prop_map(|((e, _), a)| (e, a)),
+        ) {
+            let lhs = e.multiply(&a).unwrap().determinant(EPS).unwrap();
+            let rhs = e.determinant(EPS).unwrap() * a.determinant(EPS).unwrap();
+            prop_assert!((lhs - rhs).abs() <= EQ_EPS * rhs.abs().max(1.0));
         }
     }
 }
