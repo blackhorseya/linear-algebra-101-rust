@@ -17,6 +17,7 @@ import { Route as MultiplyRouteImport } from './routes/multiply'
 import { Route as LinearityRouteImport } from './routes/linearity'
 import { Route as InvertibilityRouteImport } from './routes/invertibility'
 import { Route as EliminationRouteImport } from './routes/elimination'
+import { Route as CompositionRouteImport } from './routes/composition'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TransformRoute = TransformRouteImport.update({
@@ -59,6 +60,11 @@ const EliminationRoute = EliminationRouteImport.update({
   path: '/elimination',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CompositionRoute = CompositionRouteImport.update({
+  id: '/composition',
+  path: '/composition',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,6 +73,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/composition': typeof CompositionRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/composition': typeof CompositionRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -90,6 +98,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/composition': typeof CompositionRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/composition'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/composition'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/composition'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CompositionRoute: typeof CompositionRoute
   EliminationRoute: typeof EliminationRoute
   InvertibilityRoute: typeof InvertibilityRoute
   LinearityRoute: typeof LinearityRoute
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EliminationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/composition': {
+      id: '/composition'
+      path: '/composition'
+      fullPath: '/composition'
+      preLoaderRoute: typeof CompositionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -217,6 +237,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CompositionRoute: CompositionRoute,
   EliminationRoute: EliminationRoute,
   InvertibilityRoute: InvertibilityRoute,
   LinearityRoute: LinearityRoute,

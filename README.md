@@ -65,6 +65,7 @@
 - [x] 合成 `compose`(T_B ∘ T_A = T_BA:合成的標準矩陣 = 乘積 B·A —— `u.compose(&t)` 讀作 U ∘ T,「合成就是乘法」從定理升格為 API;維度檢查由 `multiply` 傳播(中間空間接得上 ⟺ can_multiply),不收 epsilon(乘法精確);laws:(U∘T)(x) = U(T(x))、結合律、identity 中立 —— Transformation 在 ∘ 下構成 monoid)
 - [x] 逆轉換 `inverse`(Theorem 2.13:T 可逆 ⟺ A 可逆,T⁻¹ = T_{A⁻¹} —— 委派 Gauss-Jordan 的 `Matrix::inverse`,失敗分層原樣傳播(NotSquare / NotInvertible);laws:T⁻¹(T(x)) = x 雙向、T⁻¹ ∘ T = I(compose 與 inverse 會師)、襪子鞋子 (U∘T)⁻¹ = T⁻¹∘U⁻¹、對合 (T⁻¹)⁻¹ = T、Theorem 2.12 存證(可逆 ⟺ 1-1 且 onto))
 - [x] 可逆性綜合判定表 `report`(講義 2.8 Summary Table:一次回答 1-1 / onto / 可逆三問 —— `TransformationReport` 純輸出值用 pub 欄位;is_invertible 走函數視角(Theorem 2.12 的雙射定義 1-1 && onto),Theorem 2.13(⟺ A 可逆)當 law 對帳;laws:三欄與獨立述詞逐欄一致、方陣三位一體(IMT:全亮或全滅)、非方陣恆不可逆)
+- [x] 合成與可逆性互動圖解:拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達會合(T_B ∘ T_A = T_BA),逆轉換模式看「變形 → 復原」,可在 [web 視覺化](#視覺化)操作(合成 / 求逆 / Summary Table 三燈全由 core 的 `composition` 模組當場計算)
 
 ### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)
@@ -93,7 +94,7 @@ cargo llvm-cov
 
 ## 視覺化
 
-`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)與「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)與「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
 
 WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
 

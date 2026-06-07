@@ -30,6 +30,11 @@ const FEATURES = [
     desc: '拖動矩陣的行向量,看 Range(T) = Col(A) 從整個平面塌成直線;拖 w 問「到得了嗎?」—— 可達性與映成判定由 core 即時計算。',
   },
   {
+    to: '/composition',
+    title: '合成與可逆性',
+    desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',
+  },
+  {
     to: '/span',
     title: '張成 Span',
     desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
