@@ -1,5 +1,9 @@
 //! 「矩陣作為 2D 線性變換」的基礎 binding —— /transform、/span 頁面用:
-//! 點經 2×2 矩陣變換、平行(共線)判定、行列式(有號面積)。
+//! 點經 2×2 矩陣變換、平行(共線)判定。
+//!
+//! 歷史註記:`determinant` 曾寄住本檔(當年 core 尚無行列式,在此手算封閉式
+//! ad − bc);行列式章成章後已搬回自己的 `determinant` 模組、改為委派 core ——
+//! `#[wasm_bindgen]` 匯出攤平在套件根層,搬家對 JS 端 API 零影響。
 
 use crate::{Matrix, Vector};
 use wasm_bindgen::prelude::*;
@@ -37,19 +41,6 @@ pub fn are_parallel(ux: f64, uy: f64, wx: f64, wy: f64) -> bool {
     u.is_parallel(&w, 1e-9)
 }
 
-/// 2×2 矩陣 `[[a, b], [c, d]]` 的**行列式** `ad − bc`。
-///
-/// 幾何意義:單位正方形經此變換後的平行四邊形之**有號面積**。`|det|` 是面積縮放倍率,
-/// 正負號代表是否翻面(定向),`det == 0` 表示平面被壓扁成一條線(不可逆 / 線性相依)。
-///
-/// core 目前未提供 determinant,且視覺化軌道鐵律是「不為前端改 core」,故 2×2 的封閉式
-/// 直接在 binding 計算 —— 與 `are_parallel` 把運算收在 binding 同屬「薄運算」,計算仍只在
-/// Rust 一份,JS 不重寫。
-#[wasm_bindgen]
-pub fn determinant(a: f64, b: f64, c: f64, d: f64) -> f64 {
-    a * d - b * c
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,13 +64,5 @@ mod tests {
         assert!(are_parallel(1.0, 2.0, 2.0, 4.0)); // 純量倍數
         assert!(!are_parallel(1.0, 0.0, 0.0, 1.0)); // 垂直軸
         assert!(are_parallel(0.0, 0.0, 5.0, 7.0)); // 零向量與任意向量平行
-    }
-
-    #[test]
-    fn determinant_2x2() {
-        assert_eq!(determinant(0.0, -1.0, 1.0, 0.0), 1.0); // 90° 旋轉:面積不變
-        assert_eq!(determinant(2.0, 0.0, 0.0, 3.0), 6.0); // 縮放:面積 ×6
-        assert_eq!(determinant(1.0, 0.0, 0.0, -1.0), -1.0); // 鏡射:翻面
-        assert_eq!(determinant(1.0, 2.0, 2.0, 4.0), 0.0); // 退化:塌成線
     }
 }

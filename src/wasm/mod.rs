@@ -16,6 +16,7 @@
 mod helpers;
 
 pub mod composition;
+pub mod determinant;
 pub mod elimination;
 pub mod inverse;
 pub mod linearity;
@@ -25,10 +26,11 @@ pub mod standard_matrix;
 pub mod transform;
 
 pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformation_report};
+pub use determinant::{determinant, is_invertible};
 pub use elimination::{EliminationTrace, eliminate};
 pub use inverse::{InverseTrace, invert_trace};
 pub use linearity::{add_vectors, check_linearity, scale_vector};
 pub use multiply::{MultiplyExpansion, can_multiply, multiply_expand};
 pub use range::{is_onto, range_basis, range_contains, solve_for_input, unreachable_vector};
 pub use standard_matrix::{apply_rule, sample_standard_matrix};
-pub use transform::{are_parallel, determinant, transform_point};
+pub use transform::{are_parallel, transform_point};
