@@ -63,6 +63,7 @@
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
 - [x] 一對一判定 `is_one_to_one`(Theorem 2.11:1-1 ⟺ rank(A) = n ⟺ nullity = 0 —— 與 `is_onto` 完美對偶,同一個 rank 兩端各問一次;laws:nullity 交叉驗證、寬矮必非 1-1(鴿籠)、轉置對偶(T_A 1-1 ⟺ T_{Aᵀ} onto)、方陣 1-1 ⟺ 可逆(IMT))
 - [x] 合成 `compose`(T_B ∘ T_A = T_BA:合成的標準矩陣 = 乘積 B·A —— `u.compose(&t)` 讀作 U ∘ T,「合成就是乘法」從定理升格為 API;維度檢查由 `multiply` 傳播(中間空間接得上 ⟺ can_multiply),不收 epsilon(乘法精確);laws:(U∘T)(x) = U(T(x))、結合律、identity 中立 —— Transformation 在 ∘ 下構成 monoid)
+- [x] 逆轉換 `inverse`(Theorem 2.13:T 可逆 ⟺ A 可逆,T⁻¹ = T_{A⁻¹} —— 委派 Gauss-Jordan 的 `Matrix::inverse`,失敗分層原樣傳播(NotSquare / NotInvertible);laws:T⁻¹(T(x)) = x 雙向、T⁻¹ ∘ T = I(compose 與 inverse 會師)、襪子鞋子 (U∘T)⁻¹ = T⁻¹∘U⁻¹、對合 (T⁻¹)⁻¹ = T、Theorem 2.12 存證(可逆 ⟺ 1-1 且 onto))
 
 ### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)

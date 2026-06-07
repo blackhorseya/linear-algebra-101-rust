@@ -68,6 +68,33 @@ impl Transformation {
     pub fn is_one_to_one(&self, epsilon: f64) -> bool {
         self.matrix().rank(epsilon) == self.domain_dim()
     }
+
+    /// 逆轉換(inverse transformation):**T⁻¹ 的標準矩陣 = A⁻¹**(Theorem 2.13:
+    /// T 可逆 ⟺ A 可逆,且 T⁻¹ = T_{A⁻¹})。
+    ///
+    /// 「可逆」的函數定義:存在 U 使 **U ∘ T = I 且 T ∘ U = I**(走過去能走回來,
+    /// 而且每一點都回到原地)—— 這樣的 U 只有雙射(1-1 且 onto)才配得出來
+    /// (Theorem 2.12),而 1-1 且 onto ⟺ rank = n = m ⟺ 方陣滿秩 ⟺ A 可逆:
+    /// 函數視角的「可逆」與矩陣視角的「可逆」在 IMT 會師,操作的字典補上最後一格
+    /// (⁻¹ ↔ ⁻¹)。
+    ///
+    /// 失敗分層(委派 [`Matrix::inverse`] 原樣傳播,題目的 String 錯誤升級成
+    /// 可 `match` 的 enum):
+    /// - 非方陣 → [`LinAlgError::NotSquare`](帶實際形狀):換空間的映射
+    ///   (ℝⁿ → ℝᵐ,n ≠ m)連「回到原空間」都談不上;
+    /// - 方陣但奇異 → [`LinAlgError::NotInvertible`]:塌縮的方向回不去
+    ///   (不 1-1:多個輸入擠在同一輸出,「逆」不知道該回哪一個)。
+    ///
+    /// `epsilon`:Gauss-Jordan 的 pivot 判零門檻(同 [`Matrix::inverse`])。
+    ///
+    /// 實作提示:與 `compose` 同一個收法 —— `Result<Matrix, _>` 差一步建構子,
+    /// `map(Transformation::new)`。兩題長得一模一樣不是巧合:**操作的字典
+    /// (∘ ↔ ×、⁻¹ ↔ ⁻¹)本來就是同一個形狀** —— 矩陣運算算完,包回函數視角。
+    ///
+    /// [`Matrix::inverse`]: crate::Matrix::inverse
+    pub fn inverse(&self, epsilon: f64) -> Result<Transformation, LinAlgError> {
+        self.matrix().inverse(epsilon).map(Transformation::new)
+    }
 }
 
 #[cfg(test)]
@@ -200,6 +227,64 @@ mod tests {
         let tu = t.compose(&u).unwrap();
         assert!(!ut.matrix().equals(tu.matrix()), "BA ≠ AB");
     }
+
+    /// 練習 3 題目原例:A = [[1,2],[3,5]] → A⁻¹ = [[−5,2],[3,−1]]
+    /// (det = −1;此例的 Gauss-Jordan 全程整數,殘差為零,但比較慣例
+    /// 仍走 approx —— inverse 經過消去,精確 equals 不是它的契約)。
+    #[test]
+    fn inverse_of_textbook_example() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 5.0]]));
+        let t_inv = t.inverse(1e-9).unwrap();
+        assert!(
+            t_inv.matrix().approx_equals(
+                &Matrix::from_rows(vec![vec![-5.0, 2.0], vec![3.0, -1.0]]),
+                1e-9
+            ),
+            "T⁻¹ 的標準矩陣 = A⁻¹(Theorem 2.13)"
+        );
+    }
+
+    /// 幾何例:剪切「推 2」的逆 = 剪切「推 −2」—— 怎麼變形的就怎麼推回去,
+    /// 逆轉換的幾何直觀比代數公式先一步知道答案。
+    #[test]
+    fn inverse_of_shear_is_reverse_shear() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![0.0, 1.0]]));
+        let t_inv = t.inverse(1e-9).unwrap();
+        assert!(t_inv.matrix().approx_equals(
+            &Matrix::from_rows(vec![vec![1.0, -2.0], vec![0.0, 1.0]]),
+            1e-9
+        ));
+    }
+
+    /// 題目驗收(一):非方陣 → NotSquare(帶實際形狀)—— 換空間的映射
+    /// 連「回到原空間」都談不上,與「方陣但奇異」是兩層不同的失敗。
+    #[test]
+    fn inverse_rejects_non_square() {
+        let t = Transformation::new(Matrix::new(2, 3));
+        assert_eq!(
+            t.inverse(1e-9).unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    /// 題目驗收(二):方陣但 rank 不足 → NotInvertible —— 行成比例,
+    /// 整條直線被吸到原點(不 1-1),「逆」不知道該回哪一點。
+    #[test]
+    fn inverse_rejects_singular_square() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
+        assert_eq!(t.inverse(1e-9).unwrap_err(), LinAlgError::NotInvertible);
+    }
+
+    /// 題目驗收(三):T⁻¹(T(x)) = x —— 單一見證(全稱版在 laws):
+    /// x 被 T 送出去、再被 T⁻¹ 接回來,落回原地。
+    #[test]
+    fn inverse_undoes_transformation_witness() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 5.0]]));
+        let t_inv = t.inverse(1e-9).unwrap();
+        let x = Vector::from_vec(vec![4.0, -7.0]);
+        let round_trip = t_inv.apply(&t.apply(&x).unwrap()).unwrap();
+        assert!(round_trip.approx_equals(&x, 1e-9), "T⁻¹(T(x)) ≠ x");
+    }
 }
 
 /// 合成與可逆性的 property test —— 沿 5-3 的傳統:**跨練習交叉對帳**,
@@ -211,6 +296,12 @@ mod laws {
 
     /// 消去法判零門檻(整數輸入的殘差遠低於此,沿 range laws 的 EPS)。
     const EPS: f64 = 1e-9;
+
+    /// 涉及 `inverse` 的**等式比較**容差:A⁻¹ 帶消去殘差,乘回去、再求逆等
+    /// 連續運算會放大誤差 —— 沿 inverse 章 laws 的慣例放寬到 1e-6。
+    /// (EPS 是「判零門檻」、EQ_EPS 是「等式容差」,兩個容差各司其職 ——
+    /// 這正是「epsilon 由呼叫端視運算數量級指定」慣例的用意。)
+    const EQ_EPS: f64 = 1e-6;
 
     /// 固定 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下加減乘完全精確)。
     fn int_matrix(rows: usize, cols: usize) -> impl Strategy<Value = Matrix> {
@@ -327,6 +418,78 @@ mod laws {
             let right = t.compose(&Transformation::identity(t.domain_dim())).unwrap();
             prop_assert!(left.matrix().equals(&a), "I_m ∘ T = T");
             prop_assert!(right.matrix().equals(&a), "T ∘ I_n = T");
+        }
+
+        // 練習 3 的定義律(題目驗收的全稱版):∀ x,T⁻¹(T(x)) = x 且
+        // T(T⁻¹(y)) = y —— 「逆」的本分:兩個方向都要回到原地
+        // (可逆矩陣靠 prop_assume 篩,沿 inverse 章慣例;拒絕率低)。
+        #[test]
+        fn inverse_undoes_transformation(a in int_matrix(3, 3), x in int_vector(3)) {
+            prop_assume!(a.is_invertible(EPS));
+            let t = Transformation::new(a);
+            let t_inv = t.inverse(EPS).unwrap();
+            let there_and_back = t_inv.apply(&t.apply(&x).unwrap()).unwrap();
+            prop_assert!(there_and_back.approx_equals(&x, EQ_EPS), "T⁻¹(T(x)) ≠ x");
+            let back_and_there = t.apply(&t_inv.apply(&x).unwrap()).unwrap();
+            prop_assert!(back_and_there.approx_equals(&x, EQ_EPS), "T(T⁻¹(y)) ≠ y");
+        }
+
+        // compose 與 inverse 會師:T⁻¹ ∘ T = Iₙ = T ∘ T⁻¹ —— 可逆的函數定義
+        // (matrix 層的 inverse_satisfies_definition 驗過 A·A⁻¹ = I,
+        //  這裡用本章自己的兩個 API 把同一條定義以函數詞彙重說一遍)。
+        #[test]
+        fn inverse_composes_to_identity(a in int_matrix(3, 3)) {
+            prop_assume!(a.is_invertible(EPS));
+            let t = Transformation::new(a);
+            let t_inv = t.inverse(EPS).unwrap();
+            let id = Matrix::identity(3);
+            prop_assert!(
+                t_inv.compose(&t).unwrap().matrix().approx_equals(&id, EQ_EPS),
+                "T⁻¹ ∘ T ≠ I"
+            );
+            prop_assert!(
+                t.compose(&t_inv).unwrap().matrix().approx_equals(&id, EQ_EPS),
+                "T ∘ T⁻¹ ≠ I"
+            );
+        }
+
+        // 襪子鞋子定理:(U ∘ T)⁻¹ = T⁻¹ ∘ U⁻¹ —— 解開的順序與穿上相反
+        // (先穿襪再穿鞋,脫的時候先脫鞋再脫襪)。乘積可逆由 inverse 章的
+        // product_invertible_iff_both_factors_are 保證,unwrap 安全。
+        #[test]
+        fn inverse_of_composition_reverses_order(
+            b in int_matrix(3, 3),
+            a in int_matrix(3, 3),
+        ) {
+            prop_assume!(b.is_invertible(EPS) && a.is_invertible(EPS));
+            let u = Transformation::new(b);
+            let t = Transformation::new(a);
+            let left = u.compose(&t).unwrap().inverse(EPS).unwrap();
+            let right = t.inverse(EPS).unwrap().compose(&u.inverse(EPS).unwrap()).unwrap();
+            prop_assert!(left.matrix().approx_equals(right.matrix(), EQ_EPS));
+        }
+
+        // 對合律:(T⁻¹)⁻¹ = T —— 「逆的逆」回到自己(連兩次 Gauss-Jordan,
+        // 殘差最大的一條,EQ_EPS 在這裡承重)。
+        #[test]
+        fn inverse_is_involution(a in int_matrix(3, 3)) {
+            prop_assume!(a.is_invertible(EPS));
+            let t = Transformation::new(a.clone());
+            let back = t.inverse(EPS).unwrap().inverse(EPS).unwrap();
+            prop_assert!(back.matrix().approx_equals(&a, EQ_EPS), "(T⁻¹)⁻¹ ≠ T");
+        }
+
+        // Theorem 2.12 存證(練習 1 ↔ 3 ↔ 5-3 三方交叉對帳):可逆 ⟺ 雙射
+        // (1-1 且 onto)—— inverse 的 Ok/Err 與兩個述詞的合取必須一致。
+        // 形狀隨機:非方陣兩邊都 false(Err(NotSquare) vs rank 搆不到兩端),
+        // 方陣則在 IMT 會合 —— 這條是練習 4 函數視角實作的根據。
+        #[test]
+        fn invertible_iff_one_to_one_and_onto(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            prop_assert_eq!(
+                t.inverse(EPS).is_ok(),
+                t.is_one_to_one(EPS) && t.is_onto(EPS)
+            );
         }
     }
 }
