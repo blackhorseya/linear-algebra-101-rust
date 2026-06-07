@@ -15,6 +15,7 @@
 
 mod helpers;
 
+pub mod composition;
 pub mod elimination;
 pub mod inverse;
 pub mod linearity;
@@ -23,6 +24,7 @@ pub mod range;
 pub mod standard_matrix;
 pub mod transform;
 
+pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformation_report};
 pub use elimination::{EliminationTrace, eliminate};
 pub use inverse::{InverseTrace, invert_trace};
 pub use linearity::{add_vectors, check_linearity, scale_vector};

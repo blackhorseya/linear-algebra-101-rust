@@ -8,14 +8,9 @@
 //! 「只有積木接線」精神原樣延伸到邊界層)。
 //! epsilon 一律寫死 TRACE_EPSILON(沿 eliminate 慣例:拖曳座標數量級穩定)。
 
-use super::helpers::TRACE_EPSILON;
-use crate::{Matrix, Solution, System, Transformation, Vector};
+use super::helpers::{TRACE_EPSILON, transformation_2x2};
+use crate::{Matrix, Solution, System, Vector};
 use wasm_bindgen::prelude::*;
-
-/// 把 row-major 的 2×2 純量升格為轉換 T_A: ℝ² → ℝ²(本章五顆 binding 共用)。
-fn transformation_2x2(a: f64, b: f64, c: f64, d: f64) -> Transformation {
-    Transformation::new(Matrix::from_rows(vec![vec![a, b], vec![c, d]]))
-}
 
 /// Range(T) 的基底(core 的 `range_basis`),行向量攤平串接回傳:
 /// `[]`(rank 0:值域 = {0})、`[x, y]`(rank 1:值域塌成直線)、

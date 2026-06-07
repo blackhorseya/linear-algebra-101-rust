@@ -4,11 +4,17 @@
 //! 慣例):快照攤平 `flatten`、寫死的容差 `TRACE_EPSILON`、ERO 的課本式描述
 //! `describe_*`,以及僅測試編譯的對帳建構 helper。
 
-use crate::Matrix;
+use crate::{Matrix, Transformation};
 
 /// 消去法搜尋 pivot 時「算零」的門檻;與 `elimination.rs` 的測試同量級。寫死在 binding
 /// 內(沿用 `are_parallel` 把 epsilon 寫死的慣例),呼叫端不必煩惱容差。
 pub(super) const TRACE_EPSILON: f64 = 1e-9;
+
+/// 把 row-major 的 2×2 純量升格為轉換 T_A: ℝ² → ℝ²(range 章開的模子,
+/// composition 章也用 —— 跨章即升格進 helpers)。
+pub(super) fn transformation_2x2(a: f64, b: f64, c: f64, d: f64) -> Transformation {
+    Transformation::new(Matrix::from_rows(vec![vec![a, b], vec![c, d]]))
+}
 
 /// 把 `Matrix` 攤平成 row-major `Vec<f64>`(快照用)。
 pub(super) fn flatten(m: &Matrix) -> Vec<f64> {
