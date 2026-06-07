@@ -49,7 +49,6 @@ impl Matrix {
     /// `iter().enumerate().filter(...)` 留下 `c != col` 的元素,雙層 `collect`
     /// 出 `Vec<Vec<f64>>` 後交給 [`from_rows`](Matrix::from_rows)。
     pub fn submatrix(&self, row: usize, col: usize) -> Result<Matrix, LinAlgError> {
-        
         if row >= self.rows() {
             return Err(LinAlgError::IndexOutOfRange {
                 index: row,
@@ -75,6 +74,59 @@ impl Matrix {
             })
             .collect();
         Ok(Matrix::from_rows(data))
+    }
+
+    /// 行列式 —— **遞迴餘因子展開**(cofactor expansion,定義本身):沿第一列展開,
+    ///
+    /// det A = Σⱼ (−1)^(1+j) · a₁ⱼ · det A₁ⱼ(教材 1-based)
+    ///       = Σⱼ (−1)^j · a\[0\]\[j\] · det(submatrix(0, j))(程式 0-based,
+    ///         符號從 `+` 開始交替 —— 1-based 的 (−1)^(1+j) 在 j 從 0 數時恰是 (−1)^j)。
+    ///
+    /// **O(n!)**:每層展開 n 個 (n−1)×(n−1) 子問題 —— 這是「定義直譯」的教學版,
+    /// 拿來建立直覺、給練習 4 的 Gaussian 版(O(n³),得正名 `determinant`)當
+    /// 對帳基準。實用場合不要用它。
+    ///
+    /// **不收 epsilon**:純加減乘、無判零無消去 —— 本章三支裡唯一精確的
+    /// (對比練 3 的三角判定、練 4 的 pivot 搜尋都要容差)。
+    ///
+    /// 非方陣 → [`LinAlgError::NotSquare`](帶實際形狀)—— `error.rs` 在
+    /// `NotSquare` 的 doc 裡早就預言「未來的 `determinant` 同樣適用」,本方法兌現。
+    ///
+    /// **Base case(拍板延續「邊界全定義」)**:
+    /// - 1×1 → `a₁₁`(題目驗收);
+    /// - 0×0 → `1.0`(**空積**慣例)—— 這不只是邊界補丁:它讓 1×1 自己也能走
+    ///   展開式(a₁₁ · det(0×0) = a₁₁ · 1),所以實作可以二選一 ——
+    ///   (a) 教材式:base 寫在 1×1,0×0 另外特判;
+    ///   (b) 極簡式:base **只寫 0×0 → 1.0**,讓 1×1 自然落入展開迴圈。
+    ///   兩條路測試都收。
+    ///
+    /// 實作提示:第一列用 [`row`](Matrix::row)`(0)` 借出;符號用
+    /// `if j % 2 == 0 { 1.0 } else { -1.0 }`(比 `powi` 直白);子矩陣
+    /// `self.submatrix(0, j)` 的索引依建構合法、子矩陣仍是方陣 → 兩層
+    /// `unwrap` 都安全(記得行內註解)。
+    pub fn determinant_recursive(&self) -> Result<f64, LinAlgError> {
+        if !self.is_square() {
+            return Err(LinAlgError::NotSquare {
+                rows: self.rows(),
+                cols: self.cols(),
+            });
+        }
+        if self.rows() == 0 {
+            return Ok(1.0); // 0×0 → 空積:讓 1×1 自然落入下方展開迴圈
+        }
+        let first_row = self.row(0).unwrap(); // rows() > 0 已確立 → 列 0 界內,unwrap 安全
+        let mut det = 0.0;
+        for (j, &entry) in first_row.iter().enumerate() {
+            let sign = if j % 2 == 0 { 1.0 } else { -1.0 };
+            // 索引依建構合法、子矩陣必為方陣 → 兩層 unwrap 都安全
+            let sub_det = self
+                .submatrix(0, j)
+                .unwrap()
+                .determinant_recursive()
+                .unwrap();
+            det += sign * entry * sub_det;
+        }
+        Ok(det)
     }
 }
 
@@ -171,6 +223,57 @@ mod tests {
         let _ = a.submatrix(0, 0).unwrap();
         assert!(a.equals(&before));
     }
+
+    /// Base case(題目驗收):1×1 的行列式就是唯一的分量 a₁₁。
+    #[test]
+    fn determinant_recursive_of_1x1_is_the_entry() {
+        let a = Matrix::from_rows(vec![vec![7.0]]);
+        assert_eq!(a.determinant_recursive().unwrap(), 7.0);
+    }
+
+    /// 0×0 → 1.0(空積慣例)—— 讓 1×1 自己也能寫成展開式(a₁₁ · 1)。
+    #[test]
+    fn determinant_recursive_of_0x0_is_one() {
+        let a = Matrix::from_rows(vec![]);
+        assert_eq!(a.determinant_recursive().unwrap(), 1.0);
+    }
+
+    /// 題目範例:2×2 的展開 = ad − bc。11·(−9) − 12·(−8) = −99 + 96 = −3。
+    #[test]
+    fn determinant_recursive_of_2x2_matches_ad_minus_bc() {
+        let a = Matrix::from_rows(vec![vec![11.0, 12.0], vec![-8.0, -9.0]]);
+        assert_eq!(a.determinant_recursive().unwrap(), -3.0);
+    }
+
+    /// 題目驗收:3×3 與手算一致。沿第一列展開:
+    /// 1·det[[5,6],[8,10]] − 2·det[[4,6],[7,10]] + 3·det[[4,5],[7,8]]
+    /// = 1·2 − 2·(−2) + 3·(−3) = −3。
+    #[test]
+    fn determinant_recursive_of_3x3_matches_hand_computation() {
+        let a = Matrix::from_rows(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 10.0],
+        ]);
+        assert_eq!(a.determinant_recursive().unwrap(), -3.0);
+    }
+
+    /// 奇異矩陣(第二列 = 第一列 × 2)→ det 精確為 0(整數算術,連容差都不用)。
+    #[test]
+    fn determinant_recursive_of_singular_is_zero() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]);
+        assert_eq!(a.determinant_recursive().unwrap(), 0.0);
+    }
+
+    /// 非方陣 → NotSquare(帶實際形狀)—— error.rs 預言的兌現。
+    #[test]
+    fn determinant_recursive_rejects_non_square() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            a.determinant_recursive().unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
 }
 
 /// 行列式章的 property test —— 主軸是「同一個數,三種算法」,laws 隨練習
@@ -199,6 +302,26 @@ mod laws {
     fn matrix_with_index() -> impl Strategy<Value = (Matrix, usize, usize)> {
         (2usize..=5, 2usize..=5)
             .prop_flat_map(|(rows, cols)| (int_matrix(rows, cols), 0..rows, 0..cols))
+    }
+
+    /// 方陣連同一個界內列索引(scale 一列只需一個索引)。
+    /// 上限 4:`determinant_recursive` 是 O(n!),4! = 24 條遞迴 × proptest
+    /// 256 案例還跑得動;元素 ≤ 10 → det ≤ 4!·10⁴,f64 整數精確範圍(2⁵³)
+    /// 綽綽有餘,laws 全用**精確**比較。
+    fn square_with_row() -> impl Strategy<Value = (Matrix, usize)> {
+        (1usize..=4).prop_flat_map(|n| (int_matrix(n, n), 0..n))
+    }
+
+    /// n ≥ 2 的方陣連同**兩個相異**列索引 —— modular shift 依建構保證
+    /// i ≠ j(j = (i+1+offset) mod n,offset < n−1 走不滿一圈),
+    /// 免 prop_assume 丟樣本。
+    fn square_with_distinct_rows() -> impl Strategy<Value = (Matrix, usize, usize)> {
+        (2usize..=4)
+            .prop_flat_map(|n| (int_matrix(n, n), 0..n, 0..n - 1))
+            .prop_map(|(m, i, offset)| {
+                let n = m.rows();
+                (m, i, (i + 1 + offset) % n)
+            })
     }
 
     proptest! {
@@ -231,6 +354,58 @@ mod laws {
             let lhs = m.transpose().submatrix(j, i).unwrap();
             let rhs = m.submatrix(i, j).unwrap().transpose();
             prop_assert!(lhs.equals(&rhs));
+        }
+
+        // det(Iₙ) = 1(任意 n):展開式沿第一列只有 a₁₁ = 1 那項活著,
+        // 遞迴一路剝到 base —— 也是練 3「對角線乘積」在單位矩陣上的特例。
+        #[test]
+        fn determinant_recursive_of_identity_is_one(n in 1usize..=5) {
+            prop_assert_eq!(Matrix::identity(n).determinant_recursive().unwrap(), 1.0);
+        }
+
+        // ERO 效果三部曲(一)交換兩列 → det 變號。
+        // 練 4 Gaussian 的 (−1)^r 全靠這條 —— 先用「定義版」存證。
+        #[test]
+        fn swapping_rows_flips_determinant_sign((m, i, j) in square_with_distinct_rows()) {
+            let mut swapped = m.clone();
+            swapped.swap_rows(i, j).unwrap();
+            prop_assert_eq!(
+                swapped.determinant_recursive().unwrap(),
+                -m.determinant_recursive().unwrap()
+            );
+        }
+
+        // ERO 效果三部曲(二)某列乘 c → det 乘 c。
+        // 這正是練 4 要求「不用 scaling」的理由:scaling 不保 det,
+        // 消去過程只准 swap(變號)與 add(不變)。c 依建構非零。
+        #[test]
+        fn scaling_row_scales_determinant(
+            (m, i) in square_with_row(),
+            c in prop_oneof![-5i64..=-1, 1i64..=5],
+        ) {
+            let c = c as f64;
+            let mut scaled = m.clone();
+            scaled.scale_row(i, c).unwrap();
+            prop_assert_eq!(
+                scaled.determinant_recursive().unwrap(),
+                c * m.determinant_recursive().unwrap()
+            );
+        }
+
+        // ERO 效果三部曲(三)R_dst += c·R_src → det 不變。
+        // Gaussian 消去能一路保持 det(只差正負號)的根據 ——
+        // 練 4 的正確性整個站在這條上。c = 0(no-op)也涵蓋。
+        #[test]
+        fn adding_scaled_row_preserves_determinant(
+            (m, dst, src) in square_with_distinct_rows(),
+            c in -5i64..=5,
+        ) {
+            let mut added = m.clone();
+            added.add_scaled_row(dst, src, c as f64).unwrap();
+            prop_assert_eq!(
+                added.determinant_recursive().unwrap(),
+                m.determinant_recursive().unwrap()
+            );
         }
     }
 }

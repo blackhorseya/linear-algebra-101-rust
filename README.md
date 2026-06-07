@@ -42,6 +42,7 @@
 - [x] 可逆判定 `is_invertible`(可逆矩陣定理 IMT:RREF = Iₙ ⟺ rank = n ⟺ 行向量獨立 ⟺ 唯一解⋯⋯等價條件以 laws 互驗)
 - [x] 反矩陣 `inverse`(Gauss-Jordan 累乘基本矩陣 P = Eₖ⋯E₁,Theorem 2.3 直接寫成演算法;Theorem 2.2 代數性質以 laws 驗證)
 - [x] 子矩陣 `submatrix`(A₍ᵢⱼ₎:刪第 i 列第 j 行 —— 餘因子展開的原料;1×1 → 0×0 邊界全定義、錯誤面只剩索引越界;laws:形狀各減一、內容索引映射對帳、轉置對偶 (Aᵀ)₍ⱼᵢ₎ = (A₍ᵢⱼ₎)ᵀ)
+- [x] 行列式(定義版)`determinant_recursive`(遞迴餘因子展開 det A = Σⱼ (−1)^(1+j) a₁ⱼ det A₁ⱼ,O(n!) 教學版;base 0×0 = 1 空積讓 1×1 自然落入展開、非方陣 NotSquare;laws:det Iₙ = 1 + **ERO 效果三部曲**(swap 變號 / scale 倍乘 / add 不變)—— 練 4 Gaussian 版的理論根據先存證)
 - [ ] 行列式 `determinant`
 
 ### 5. 線性轉換(Linear Transformation)
