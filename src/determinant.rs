@@ -200,6 +200,74 @@ impl Matrix {
             None
         }
     }
+
+    /// 行列式 —— **Gaussian 消去版**(Theorem 3.3),三支裡最實用的,**得正名
+    /// `determinant`**(沿 `inverse` 的命名先例:正名給實用算法,演算法後綴給
+    /// 教學版)。forward 消去化往上三角,但**只准兩種 ERO**:
+    ///
+    /// - **swap**(換列):det 變號 → 記翻號,最後乘 (−1)^r;
+    /// - **add**(R_r += c·R_pivot):det 不變 —— 消去的主力;
+    /// - **絕不 scale**(題目要求):scale 會把 det 乘走一個倍數。
+    ///
+    /// 化完 **det = (−1)^r × 對角線乘積** —— O(n³)。練 2 存證的 ERO 效果
+    /// 三部曲就是這個演算法的正確性證明:每一步要嘛翻號、要嘛不變,帳全程平。
+    ///
+    /// 與 [`row_echelon_form`](Matrix::row_echelon_form) 的差異:那支不數
+    /// swap(REF 不在乎正負號),所以這裡自備迴圈;pivot 沿用 crate 內部的
+    /// `pivot_row_below`(partial pivoting —— 比教科書「必要時才換」多 swap
+    /// 幾次無妨,每次**真** swap 都翻號,代數恆成立)。
+    ///
+    /// **方陣的簡化**(比 REF 好寫):某 column 在對角線以下找不到 pivot ⟹
+    /// 奇異 ⟹ **early return 精確 `0.0`**(題目驗收);反之每 column 必有
+    /// pivot,pivot 恰沿對角線走 —— 不需獨立的 pivot_row 游標,`col` 自己
+    /// 就是 pivot row。
+    ///
+    /// **陷阱(測試有釘)**:partial pivoting 找到的 `p` 可能就是 `col` 自己
+    /// —— `swap_rows(i, i)` 是無害 no-op,**不可翻號**,否則正負號隨機錯。
+    ///
+    /// 非方陣 → [`LinAlgError::NotSquare`];0×0 → `Ok(1.0)`(空積,三條路
+    /// 連邊界都對齊)。`epsilon`:pivot 判零門檻。
+    ///
+    /// 效能(題目驗收):O(n³) vs O(n!) 是結構性差距 —— 10×10 下 1,000 步
+    /// 對 3,628,800 條展開路徑;測試不做計時斷言(flaky),改釘「遞迴版
+    /// 跑不動的尺寸 Gaussian 輕鬆跑完且值正確」(12×12 三對角)。
+    ///
+    /// 實作提示:`clone` 出 working、`sign: f64 = 1.0`;`for col in 0..n` ——
+    /// `pivot_row_below(col, col, epsilon)` 的 `else` 分支 `return Ok(0.0)`;
+    /// `p != col` 才 swap + `sign = -sign`;內層 `r in col+1..n` 消去
+    /// (factor = working\[r\]\[col\] / pivot,`add_scaled_row(r, col, -factor)`);
+    /// 收尾 `Ok(sign * 對角線乘積)`(乘積寫法同 fast path)。
+    pub fn determinant(&self, epsilon: f64) -> Result<f64, LinAlgError> {
+        if !self.is_square() {
+            return Err(LinAlgError::NotSquare {
+                rows: self.rows(),
+                cols: self.cols(),
+            });
+        }
+        let mut working = self.clone();
+        let mut sign = 1.0;
+        for col in 0..working.rows() {
+            // let-else 拉平 happy path(沿 row_echelon_form 的寫法)
+            let Some(p) = working.pivot_row_below(col, col, epsilon) else {
+                return Ok(0.0); // 對角線以下找不到 pivot → 奇異 → det 精確為 0
+            };
+            if p != col {
+                working.swap_rows(p, col).unwrap(); // 兩索引皆界內 → unwrap 安全
+                sign = -sign; // 真 swap 才翻號;p == col 的自換是 no-op,不翻
+            }
+            // pivot 值在內層迴圈中不變,提出來算一次(沿 row_echelon_form 的
+            // loop-invariant code motion)
+            let pivot_val = working.row(col).unwrap()[col];
+            for r in col + 1..working.rows() {
+                let factor = working.row(r).unwrap()[col] / pivot_val;
+                working.add_scaled_row(r, col, -factor).unwrap(); // r > col 必相異
+            }
+        }
+        Ok(sign
+            * (0..working.rows())
+                .map(|i| working.row(i).unwrap()[i])
+                .product::<f64>())
+    }
 }
 
 #[cfg(test)]
@@ -447,6 +515,101 @@ mod tests {
         let a = Matrix::from_rows(vec![]);
         assert_eq!(a.determinant_triangular(1e-9), Some(1.0));
     }
+
+    /// 題目範例:2×2 → −3。消去帶除法(factor = −8/11)→ 殘差,用容差比較
+    /// (對比 determinant_recursive 的同一案例用精確 assert_eq —— 兩支算法
+    /// 的「精確 vs 近似」性格從測試寫法就看得出來)。
+    #[test]
+    fn determinant_matches_recursive_on_2x2() {
+        let a = Matrix::from_rows(vec![vec![11.0, 12.0], vec![-8.0, -9.0]]);
+        assert!((a.determinant(1e-9).unwrap() - (-3.0)).abs() < 1e-9);
+    }
+
+    /// 與練 2 同一個 3×3(手算 −3)—— 同一個數,第二條算法。
+    #[test]
+    fn determinant_of_3x3_matches_hand_computation() {
+        let a = Matrix::from_rows(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 10.0],
+        ]);
+        assert!((a.determinant(1e-9).unwrap() - (-3.0)).abs() < 1e-9);
+    }
+
+    /// I₄ → 精確 1.0:pivot 全在位(無 swap)、factor 全零(消去是 no-op)
+    /// —— 連殘差都沒有,可以精確比較。
+    #[test]
+    fn determinant_of_identity_is_exactly_one() {
+        assert_eq!(Matrix::identity(4).determinant(1e-9).unwrap(), 1.0);
+    }
+
+    /// 題目驗收:奇異(第二列 = 第一列 × 2)→ **精確** 0.0 ——
+    /// 消去後該 column 找不到 pivot,early return 字面值 0.0,不是殘渣。
+    #[test]
+    fn determinant_of_singular_is_exactly_zero() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]);
+        assert_eq!(a.determinant(1e-9).unwrap(), 0.0);
+    }
+
+    /// 換列翻號:permutation 矩陣 [[0,1],[1,0]] 必須 swap 一次 →
+    /// det = (−1)¹ × 1 × 1 = −1(精確:swap 後就是 identity,零殘差)。
+    #[test]
+    fn determinant_flips_sign_on_real_swap() {
+        let a = Matrix::from_rows(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
+        assert_eq!(a.determinant(1e-9).unwrap(), -1.0);
+    }
+
+    /// 陷阱釘死:pivot 已在定位(partial pivoting 回 p == col)→ 自換是
+    /// no-op,**不可翻號** —— 錯翻的話對角矩陣會算出 −6。
+    #[test]
+    fn determinant_does_not_flip_sign_on_self_swap() {
+        let a = Matrix::from_rows(vec![vec![2.0, 0.0], vec![0.0, 3.0]]);
+        assert_eq!(a.determinant(1e-9).unwrap(), 6.0);
+    }
+
+    /// 非方陣 → NotSquare(與 determinant_recursive 同一個錯誤面)。
+    #[test]
+    fn determinant_rejects_non_square() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            a.determinant(1e-9).unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    /// 0×0 → 1.0:三條算法在退化邊界全數對齊(空積慣例)。
+    #[test]
+    fn determinant_of_0x0_is_one() {
+        let a = Matrix::from_rows(vec![]);
+        assert_eq!(a.determinant(1e-9).unwrap(), 1.0);
+    }
+
+    /// 效能驗收的可跑版:12×12 的遞迴版要 12! ≈ 4.8 億條展開路徑(不可行),
+    /// Gaussian 版瞬間跑完 —— 這支測試能結束本身就是驗收。
+    /// 用三對角矩陣(對角 2、鄰對角 1):det 滿足 continuant 遞推
+    /// Dₙ = 2Dₙ₋₁ − Dₙ₋₂(D₁ = 2, D₂ = 3)⟹ Dₙ = n + 1,期望 13。
+    #[test]
+    fn determinant_scales_to_sizes_recursion_cannot() {
+        let n = 12usize;
+        let a = Matrix::from_rows(
+            (0..n)
+                .map(|i| {
+                    (0..n)
+                        .map(|j| {
+                            if i == j {
+                                2.0
+                            } else if i.abs_diff(j) == 1 {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        })
+                        .collect()
+                })
+                .collect(),
+        );
+        assert!((a.determinant(1e-9).unwrap() - 13.0).abs() < 1e-6);
+    }
 }
 
 /// 行列式章的 property test —— 主軸是「同一個數,三種算法」,laws 隨練習
@@ -455,6 +618,14 @@ mod tests {
 mod laws {
     use crate::Matrix;
     use proptest::prelude::*;
+
+    /// 消去法判零門檻(整數輸入的殘差遠低於此,沿 composition laws 的 EPS)。
+    const EPS: f64 = 1e-9;
+
+    /// Gaussian 版 `determinant` 的**等式比較**容差:消去帶除法、殘差隨運算
+    /// 累積 —— 沿 inverse / composition 章的雙容差慣例放寬到 1e-6
+    /// (EPS 判零、EQ_EPS 比等式,各司其職)。
+    const EQ_EPS: f64 = 1e-6;
 
     /// 固定 `rows×cols`、元素 [-10, 10] 整數(沿 composition 章慣例)。
     /// submatrix 純搬運、零運算 —— 整數配**精確** `equals`,連容差都不需要。
@@ -533,6 +704,12 @@ mod laws {
         (1usize..=4)
             .prop_flat_map(|n| int_matrix(n, n))
             .prop_map(|m| zero_unless(&m, |i, j| i >= j))
+    }
+
+    /// 1..=4 的隨機整數方陣 —— 三路對帳的主食(上限 4:對帳對象
+    /// `determinant_recursive` 是 O(n!));練 5 的 Theorem 3.4 三條也吃它。
+    fn square_int_matrix() -> impl Strategy<Value = Matrix> {
+        (1usize..=4).prop_flat_map(|n| int_matrix(n, n))
     }
 
     proptest! {
@@ -654,6 +831,29 @@ mod laws {
                 m.is_lower_triangular(0.0),
                 m.transpose().is_upper_triangular(0.0)
             );
+        }
+
+        // 「同一個數」第二回合(主對帳):Gaussian(O(n³))與定義版(O(n!))
+        // 在隨機方陣上必同值 —— 消去 vs 展開,兩條完全獨立的計算路徑。
+        // 整數輸入下遞迴精確、Gaussian 帶除法殘差 → EQ_EPS 等式容差。
+        #[test]
+        fn gaussian_agrees_with_recursive(m in square_int_matrix()) {
+            let gauss = m.determinant(EPS).unwrap();
+            let exact = m.determinant_recursive().unwrap();
+            prop_assert!((gauss - exact).abs() <= EQ_EPS);
+        }
+
+        // 第三回合,三角形閉合:Gaussian 與三角 fast path 在三角矩陣上同值
+        // —— recursive ↔ triangular(練 3)、gaussian ↔ recursive(上一條)、
+        // gaussian ↔ triangular(這條)三邊都直接驗過,任兩條算法不一致
+        // 都會在某條 law 現形。依建構必是三角 → fast path 必 Some。
+        #[test]
+        fn gaussian_agrees_with_triangular_fast_path(
+            m in prop_oneof![upper_triangular_int_matrix(), lower_triangular_int_matrix()],
+        ) {
+            let fast = m.determinant_triangular(EPS).unwrap();
+            let gauss = m.determinant(EPS).unwrap();
+            prop_assert!((gauss - fast).abs() <= EQ_EPS);
         }
     }
 }
