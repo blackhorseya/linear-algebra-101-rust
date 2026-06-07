@@ -20,9 +20,36 @@
 //! [`Matrix::multiply`]: crate::Matrix::multiply
 //! [`Matrix::inverse`]: crate::Matrix::inverse
 
-use crate::Transformation;
+use crate::{LinAlgError, Transformation};
 
 impl Transformation {
+    /// 合成(composition):**(U ∘ T)(x) = U(T(x))**,先施 T、再施 U ——
+    /// `self` 是外層 U,讀法與數學記法 ∘ 同向:`u.compose(&t)` = U ∘ T。
+    ///
+    /// 課程的核心性質:**T_B ∘ T_A = T_BA** —— 合成轉換的標準矩陣就是
+    /// 兩個標準矩陣的乘積。為什麼?乘法結合律是橋:
+    /// U(T(x)) = B(Ax) = (BA)x —— 「先後施作兩個函數」與「先乘好矩陣
+    /// 再一次施作」是同一個映射。第三單元刻乘法時的 law
+    /// `multiply_is_composition_of_actions` 早就把這條存證了;本方法把它
+    /// 從定理升格為 **API**:合成「就是」乘法([`Matrix::multiply`])。
+    ///
+    /// 維度相容性(題目驗收):T 的 codomain 必須 = U 的 domain(中間的 ℝᵐ
+    /// 要接得上),否則 [`LinAlgError::DimensionMismatch`]。**不需要自己檢查**:
+    /// 這恰好就是 `multiply` 的 can_multiply 條件(BA 可乘 ⟺ B 的行數 =
+    /// A 的列數 ⟺ 同一個 m)—— `?` 或 `map` 讓錯誤自己傳播,驗證規則單一真相。
+    ///
+    /// 四題裡唯一**不收 epsilon** 的:乘法是精確運算,無消去、無判零 ——
+    /// 哪些運算碰消去、哪些不碰,從簽名就看得出來。
+    ///
+    /// 實作提示:一行 —— `multiply` 回 `Result<Matrix, _>`,差一步包成
+    /// `Transformation`:`Result::map` 收建構子(point-free 風格可直接
+    /// `map(Transformation::new)`)。
+    ///
+    /// [`Matrix::multiply`]: crate::Matrix::multiply
+    pub fn compose(&self, t: &Transformation) -> Result<Transformation, LinAlgError> {
+        self.matrix().multiply(t.matrix()).map(Transformation::new)
+    }
+
     /// 一對一(one-to-one)判定:**T 一對一 ⟺ rank(A) = n**(Theorem 2.11)。
     ///
     /// 「一對一」問的是輸入端:不同輸入必到不同輸出(T(u) = T(v) ⟹ u = v)。
@@ -45,7 +72,7 @@ impl Transformation {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Matrix, Transformation};
+    use crate::{LinAlgError, Matrix, Transformation, Vector};
 
     /// 題目原例(一):2×3 矩陣(ℝ³ → ℝ²)—— n = 3 > m = 2,鴿籠直接判死:
     /// rank ≤ 2 < 3,三維輸入擠進二維輸出必有相撞。
@@ -110,13 +137,76 @@ mod tests {
         let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0]]));
         assert!(!t.is_one_to_one(1e-9));
     }
+
+    /// 練習 2 核心性質:U ∘ T 的標準矩陣 = B·A(矩陣序與 ∘ 同向)。
+    /// 旋轉 90°(U)接在 x 軸反射(T)後面 —— 手算 B·A 釘住乘法方向:
+    /// B = [[0,−1],[1,0]]、A = [[1,0],[0,−1]] → BA = [[0,1],[1,0]](swap)。
+    /// 整數元素在 f64 下精確,用精確 equals。
+    #[test]
+    fn compose_standard_matrix_is_product_ba() {
+        let u = Transformation::new(Matrix::from_rows(vec![vec![0.0, -1.0], vec![1.0, 0.0]]));
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, -1.0]]));
+        let c = u.compose(&t).unwrap();
+        assert!(
+            c.matrix()
+                .equals(&Matrix::from_rows(vec![vec![0.0, 1.0], vec![1.0, 0.0]])),
+            "C = B·A:先反射、再旋轉 = 對角線鏡射(swap)"
+        );
+    }
+
+    /// 題目驗收:維度鏈 —— U 為 p×m、T 為 m×n,合成是 p×n(ℝⁿ → ℝᵖ):
+    /// 2×3 ∘ 3×4 = 2×4,中間的 ℝ³ 被「乘掉」,函數視角讀作
+    /// ℝ⁴ —T→ ℝ³ —U→ ℝ²(domain 取 T 的、codomain 取 U 的)。
+    #[test]
+    fn compose_chains_dimensions_through_middle_space() {
+        let u = Transformation::new(Matrix::new(2, 3)); // ℝ³ → ℝ²
+        let t = Transformation::new(Matrix::new(3, 4)); // ℝ⁴ → ℝ³
+        let c = u.compose(&t).unwrap();
+        assert_eq!(c.dimensions(), (4, 2), "U ∘ T: ℝ⁴ → ℝ²");
+    }
+
+    /// 題目驗收:中間空間接不上(T 落在 ℝ²,U 卻從 ℝ³ 出發)→
+    /// DimensionMismatch —— 由 multiply 的 can_multiply 檢查傳播,
+    /// 不是 compose 自己另寫的驗證(單一真相)。
+    #[test]
+    fn compose_rejects_mismatched_middle_space() {
+        let u = Transformation::new(Matrix::new(2, 3)); // ℝ³ → ℝ²
+        let t = Transformation::new(Matrix::new(2, 4)); // ℝ⁴ → ℝ²:落點 ≠ U 的起點
+        assert_eq!(u.compose(&t).unwrap_err(), LinAlgError::DimensionMismatch);
+    }
+
+    /// 題目驗收:C(x) = U(T(x)) —— 單一見證(全稱版在 laws):
+    /// x 走「先 T 後 U」兩步,與走合成 C 一步,落在同一點。
+    #[test]
+    fn compose_apply_agrees_with_sequential_application() {
+        let u = Transformation::new(Matrix::from_rows(vec![vec![1.0, 1.0], vec![0.0, 2.0]]));
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![3.0, 0.0, 1.0],
+            vec![-1.0, 2.0, 0.0],
+        ]));
+        let x = Vector::from_vec(vec![1.0, 2.0, -1.0]);
+        let two_steps = u.apply(&t.apply(&x).unwrap()).unwrap();
+        let one_step = u.compose(&t).unwrap().apply(&x).unwrap();
+        assert!(one_step.equals(&two_steps), "兩條路必須會合");
+    }
+
+    /// 合成**不可交換**:U ∘ T ≠ T ∘ U —— 先反射再旋轉 ≠ 先旋轉再反射
+    /// (矩陣乘法不可交換的函數視角;這正是 ∘ 要分左右的原因)。
+    #[test]
+    fn compose_is_not_commutative() {
+        let u = Transformation::new(Matrix::from_rows(vec![vec![0.0, -1.0], vec![1.0, 0.0]]));
+        let t = Transformation::new(Matrix::from_rows(vec![vec![1.0, 0.0], vec![0.0, -1.0]]));
+        let ut = u.compose(&t).unwrap();
+        let tu = t.compose(&u).unwrap();
+        assert!(!ut.matrix().equals(tu.matrix()), "BA ≠ AB");
+    }
 }
 
 /// 合成與可逆性的 property test —— 沿 5-3 的傳統:**跨練習交叉對帳**,
 /// 隨練習推進逐條累積(策略沿「先抽形狀、再抽內容」的依賴式兩階段抽樣)。
 #[cfg(test)]
 mod laws {
-    use crate::{Matrix, Transformation};
+    use crate::{Matrix, Transformation, Vector};
     use proptest::prelude::*;
 
     /// 消去法判零門檻(整數輸入的殘差遠低於此,沿 range laws 的 EPS)。
@@ -143,6 +233,26 @@ mod laws {
     /// 「寬矮必非 1-1」:同一個 rank ≤ min(m, n),兩端各擠死一次)。
     fn wide_int_matrix() -> impl Strategy<Value = Matrix> {
         (1usize..=3, 1usize..=3).prop_flat_map(|(rows, extra)| int_matrix(rows, rows + extra))
+    }
+
+    /// 長度 `n`、元素為 [-10, 10] 整數的向量。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|v| v as f64).collect()))
+    }
+
+    /// 可合成的一對(B: p×m、A: m×n)連同一支住在 A 定義域的 x ∈ ℝⁿ ——
+    /// 中間維 m 與輸入維 n 都在同一次 flat_map 共用,**依建構**保證接得上
+    /// (免 prop_assume 丟樣本,沿 tall / wide 的同一招)。
+    fn composable_pair_with_input() -> impl Strategy<Value = (Matrix, Matrix, Vector)> {
+        (1usize..=3, 1usize..=3, 1usize..=3)
+            .prop_flat_map(|(p, m, n)| (int_matrix(p, m), int_matrix(m, n), int_vector(n)))
+    }
+
+    /// 可合成的三鏈(C: p×m、B: m×n、A: n×q)—— 結合律要三個才擺得開。
+    fn composable_triple() -> impl Strategy<Value = (Matrix, Matrix, Matrix)> {
+        (1usize..=3, 1usize..=3, 1usize..=3, 1usize..=3)
+            .prop_flat_map(|(p, m, n, q)| (int_matrix(p, m), int_matrix(m, n), int_matrix(n, q)))
     }
 
     proptest! {
@@ -179,6 +289,44 @@ mod laws {
         fn square_transformation_one_to_one_iff_invertible(a in int_matrix(3, 3)) {
             let t = Transformation::new(a.clone());
             prop_assert_eq!(t.is_one_to_one(EPS), a.is_invertible(EPS));
+        }
+
+        // 練習 2 的定義律(題目驗收的全稱版):∀ x,(U ∘ T)(x) = U(T(x)) ——
+        // 「先乘好矩陣、一步走完」與「兩個函數先後施作」必須處處會合。
+        // 小整數乘加在 f64 下精確 → 精確 equals(維度依建構接得上,unwrap 安全)。
+        #[test]
+        fn compose_apply_agrees_with_sequential_application(
+            (b, a, x) in composable_pair_with_input(),
+        ) {
+            let u = Transformation::new(b);
+            let t = Transformation::new(a);
+            let one_step = u.compose(&t).unwrap().apply(&x).unwrap();
+            let two_steps = u.apply(&t.apply(&x).unwrap()).unwrap();
+            prop_assert!(one_step.equals(&two_steps), "x={x:?}");
+        }
+
+        // 結合律:(U ∘ T) ∘ S = U ∘ (T ∘ S) —— 矩陣乘法結合律的函數視角。
+        // 函數合成「天生」結合(兩邊都是 x ↦ U(T(S(x)));這正是矩陣乘法
+        // 結合律最漂亮的證明 —— Transformation 在 ∘ 下構成 monoid。
+        #[test]
+        fn compose_is_associative((c, b, a) in composable_triple()) {
+            let u = Transformation::new(c);
+            let t = Transformation::new(b);
+            let s = Transformation::new(a);
+            let left = u.compose(&t).unwrap().compose(&s).unwrap();
+            let right = u.compose(&t.compose(&s).unwrap()).unwrap();
+            prop_assert!(left.matrix().equals(right.matrix()));
+        }
+
+        // 單位元:I_m ∘ T = T = T ∘ I_n —— identity(5-1)在 ∘ 下中立,
+        // monoid 的另一半;注意左右兩支單位的**維度不同**(各接一端)。
+        #[test]
+        fn identity_is_neutral_for_composition(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a.clone());
+            let left = Transformation::identity(t.codomain_dim()).compose(&t).unwrap();
+            let right = t.compose(&Transformation::identity(t.domain_dim())).unwrap();
+            prop_assert!(left.matrix().equals(&a), "I_m ∘ T = T");
+            prop_assert!(right.matrix().equals(&a), "T ∘ I_n = T");
         }
     }
 }
