@@ -301,6 +301,25 @@ mod tests {
         assert!(!verify_linearity(id, &u, &v, 2.0, 1e-9));
     }
 
+    /// T 的輸出維度前後不一致 → false:泛型 F 收「任何」向量進、向量出的 closure,
+    /// 不保證它是到固定 ℝᵐ 的函數 —— 這種「目標空間隨輸入值漂移」的病態映射,
+    /// T(u)+T(v) 根本不存在,談不上守恆(與 mismatched_spaces 同款防衛)。
+    #[test]
+    fn verify_linearity_rejects_inconsistent_output_dimensions() {
+        // 第一個分量為正 → 折到 ℝ¹,否則留在原空間。u、v 同在 ℝ²(過得了第一關),
+        // 但 T(u) ∈ ℝ¹、T(v) ∈ ℝ² —— 維度差異由「值」觸發,不是由輸入空間。
+        let collapse_positives = |x: &Vector| {
+            if x.entries()[0] > 0.0 {
+                Vector::from_vec(vec![x.entries()[0]])
+            } else {
+                x.clone()
+            }
+        };
+        let u = Vector::from_vec(vec![1.0, 2.0]);
+        let v = Vector::from_vec(vec![-1.0, 2.0]);
+        assert!(!verify_linearity(collapse_positives, &u, &v, 2.0, 1e-9));
+    }
+
     /// 練習 4 驗收(一):單位轉換後向量**完全不變**(Iₙ·x 每項是 1·xᵢ + 0 的和,
     /// 浮點下精確,可用精確 equals)。
     #[test]

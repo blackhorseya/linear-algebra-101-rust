@@ -259,6 +259,23 @@ mod tests {
     }
 
     #[test]
+    fn clone_shares_the_rule_not_a_copy() {
+        // `Clone` 是手寫的(derive 會多要求 `T: Clone`),斷言它做的事與註解一致:
+        let original = even_set();
+        let cloned = original.clone();
+        // white-box:分身與本尊持有**同一條**規則(Rc 指標相等),不是規則的複本。
+        assert!(
+            Rc::ptr_eq(&original.predicate, &cloned.predicate),
+            "clone 應共享 Rc 指標,而非複製規則"
+        );
+        // black-box:既然共享規則,成員判定自然處處一致 —— 且本尊沒被 move 走、仍可用。
+        assert!(
+            first_disagreement(&original, &cloned, &PROBES).is_none(),
+            "clone 與本尊的成員判定不一致"
+        );
+    }
+
+    #[test]
     fn holds_vectors_by_value_not_identity() {
         // `PredicateSet<T>` 吃得下 `HashSet<T>` 吃不下的 T:`Vector` 帶 `Vec<f64>` 欄位,
         // 進不了 `HashSet`;就算用指標當 key,比的也只是指標身分。這裡成員資格從向量的
