@@ -712,6 +712,12 @@ mod laws {
         (1usize..=4).prop_flat_map(|n| int_matrix(n, n))
     }
 
+    /// **同尺寸**的方陣對 —— 乘法積性(Theorem 3.4(b))要兩個可乘的方陣,
+    /// n 在同一次 flat_map 共用,依建構保證可乘(沿 composable_pair 的招)。
+    fn square_int_matrix_pair() -> impl Strategy<Value = (Matrix, Matrix)> {
+        (1usize..=4).prop_flat_map(|n| (int_matrix(n, n), int_matrix(n, n)))
+    }
+
     proptest! {
         // 形狀律:刪一列一行,兩維各減一 —— 「A₍ᵢⱼ₎ 是 (n−1)×(n−1)」的程式版。
         #[test]
@@ -854,6 +860,46 @@ mod laws {
             let fast = m.determinant_triangular(EPS).unwrap();
             let gauss = m.determinant(EPS).unwrap();
             prop_assert!((gauss - fast).abs() <= EQ_EPS);
+        }
+
+        // ───── 練習 5:Theorem 3.4 三大性質(laws 收官,由使用者親手寫)─────
+
+        // (a) A 可逆 ⟺ det A ≠ 0 —— 行列式存在的理由:把整套 IMT 壓縮成
+        // 一個數的非零判定。本章與可逆矩陣章在此會師。
+        // 左路 is_invertible(EPS)(rank 滿不滿),右路 |det| 是否 > EQ_EPS
+        // (殘差下「非零」要用容差判;整數矩陣 det 非零時 |det| ≥ 1,安全)。
+        #[test]
+        fn invertible_iff_determinant_nonzero(m in square_int_matrix()) {
+            let invertible = m.is_invertible(EPS);
+            let det_nonzero = m.determinant(EPS).unwrap().abs() > EQ_EPS;
+            prop_assert_eq!(invertible, det_nonzero);
+        }
+
+        // (b) det(AB) = det A · det B —— 乘法積性:與乘法章會師。隨機矩陣
+        // 幾乎都非對稱(題目驗收涵蓋)。⚠ 容差陷阱:det(AB) 的量級可達
+        // 4!·400⁴ ≈ 6×10¹¹,Gaussian 的「相對」殘差乘上去,絕對誤差會遠超
+        // EQ_EPS —— 等式比較要用**相對容差**:
+        //   |lhs − rhs| ≤ EQ_EPS · rhs.abs().max(1.0)
+        // (「epsilon 由呼叫端視運算數量級指定」這條全 repo 慣例,在這裡
+        // 從建議變成必須。)
+        #[test]
+        fn determinant_is_multiplicative((a, b) in square_int_matrix_pair()) {
+            let ab = a.multiply(&b).unwrap();
+            let det_ab = ab.determinant(EPS).unwrap();
+            let det_a = a.determinant(EPS).unwrap();
+            let det_b = b.determinant(EPS).unwrap();
+            let rhs = det_a * det_b;
+            prop_assert!((det_ab - rhs).abs() <= EQ_EPS * rhs.abs().max(1.0));
+        }
+
+        // (c) det Aᵀ = det A —— 與 transpose 會師:行與列在行列式眼中對稱
+        // (這也回頭解釋練 2 為何「沿第一列展開」不失一般性)。兩邊量級
+        // 相同(≤ 4!·10⁴),絕對容差 EQ_EPS 即可。
+        #[test]
+        fn determinant_of_transpose_is_unchanged(m in square_int_matrix()) {
+            let det_t = m.transpose().determinant(EPS).unwrap();
+            let det = m.determinant(EPS).unwrap();
+            prop_assert!((det_t - det).abs() <= EQ_EPS);
         }
     }
 }
