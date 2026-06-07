@@ -41,6 +41,7 @@
 - [x] 基本矩陣 elementary matrices(`elementary_swap` / `elementary_scale` / `elementary_add_scaled`:Iₙ + 一次 ERO;左乘 E = 施作該列運算)
 - [x] 可逆判定 `is_invertible`(可逆矩陣定理 IMT:RREF = Iₙ ⟺ rank = n ⟺ 行向量獨立 ⟺ 唯一解⋯⋯等價條件以 laws 互驗)
 - [x] 反矩陣 `inverse`(Gauss-Jordan 累乘基本矩陣 P = Eₖ⋯E₁,Theorem 2.3 直接寫成演算法;Theorem 2.2 代數性質以 laws 驗證)
+- [x] 子矩陣 `submatrix`(A₍ᵢⱼ₎:刪第 i 列第 j 行 —— 餘因子展開的原料;1×1 → 0×0 邊界全定義、錯誤面只剩索引越界;laws:形狀各減一、內容索引映射對帳、轉置對偶 (Aᵀ)₍ⱼᵢ₎ = (A₍ᵢⱼ₎)ᵀ)
 - [ ] 行列式 `determinant`
 
 ### 5. 線性轉換(Linear Transformation)

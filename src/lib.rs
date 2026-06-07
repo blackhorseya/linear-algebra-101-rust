@@ -7,6 +7,7 @@
 pub mod basis;
 pub mod composition;
 pub mod coordinates;
+pub mod determinant;
 pub mod diagonal;
 pub mod elimination;
 pub mod error;
