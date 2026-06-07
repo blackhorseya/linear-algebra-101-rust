@@ -89,7 +89,7 @@ function LinearityDemo() {
 
   // 線性檢查的單一真相:core 的 verify_linearity(經 WASM)。
   const linear = linalg.checkLinearity(m.a, m.b, m.c, m.d, u.x, u.y, v.x, v.y, k)
-  const det = linalg.determinant(m.a, m.b, m.c, m.d)
+  const det = linalg.determinant([m.a, m.b, m.c, m.d], 2)
   const collapsed = Math.abs(det) < 1e-9
 
   return (

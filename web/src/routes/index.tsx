@@ -54,6 +54,11 @@ const FEATURES = [
     title: '可逆矩陣',
     desc: 'Gauss-Jordan 累乘基本矩陣求 A⁻¹,並以 2D 變換看每個列運算的幾何意義(鏡射、伸縮、剪切)。',
   },
+  {
+    to: '/determinant',
+    title: '行列式',
+    desc: '拖 î′、ĵ′ 看單位正方形的像:|det| = 面積縮放、det < 0 = 翻面;切到 3×3 / 4×4 看 det 推廣為(超)體積,det 路與 rank 路對帳 Theorem 3.4(a)。',
+  },
 ] as const
 
 const STACK = [

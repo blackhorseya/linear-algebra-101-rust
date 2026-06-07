@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import type { EroKind, InverseStepJS, InverseTraceJS } from '../lib/linalg'
 import { InverseCanvas } from '../components/InverseCanvas'
+import { EditableGrid, SizeToggle } from '../components/MatrixGrid'
+import { resizeGrid, type Size } from '../lib/grid'
 import { PlaybackControls } from '../components/Playback'
 import { Status } from '../components/ui'
 import { fmt } from '../lib/format'
@@ -11,8 +13,6 @@ import { fmt } from '../lib/format'
 export const Route = createFileRoute('/invertibility')({
   component: InvertibilityDemo,
 })
-
-type Size = 2 | 3 | 4
 
 /** 各尺寸的預設矩陣(皆可逆;3×3 刻意讓第一個 pivot 需要換列)。 */
 const DEFAULT_GRIDS: Record<Size, number[][]> = {
@@ -254,77 +254,9 @@ function InvertibilityDemo() {
       <IMTPanel
         trace={trace}
         eroCount={eroCount}
-        det={
-          n === 2
-            ? linalg.determinant(grid[0][0], grid[0][1], grid[1][0], grid[1][1])
-            : null
-        }
+        det={linalg.determinant(grid.flat(), n)}
       />
     </section>
-  )
-}
-
-/** 切換尺寸:保留共有左上角;放大時向 Iₙ 靠攏(新對角補 1、其餘補 0),預設仍可逆。 */
-function resizeGrid(g: number[][], next: Size): number[][] {
-  return Array.from({ length: next }, (_, r) =>
-    Array.from({ length: next }, (_, c) => g[r]?.[c] ?? (r === c ? 1 : 0)),
-  )
-}
-
-function SizeToggle({
-  n,
-  onChange,
-}: {
-  n: Size
-  onChange: (n: Size) => void
-}) {
-  return (
-    <div className="inline-flex rounded-lg border border-slate-700 p-0.5">
-      {([2, 3, 4] as const).map((s) => (
-        <button
-          key={s}
-          onClick={() => onChange(s)}
-          className={[
-            'rounded-md px-3 py-1.5 text-sm transition',
-            n === s
-              ? 'bg-violet-600 text-white'
-              : 'text-slate-400 hover:text-slate-100',
-          ].join(' ')}
-        >
-          {s}×{s}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** 可編輯的 n×n 輸入網格(綁定原始 grid state)。 */
-function EditableGrid({
-  grid,
-  onCell,
-}: {
-  grid: number[][]
-  onCell: (r: number, c: number, value: number) => void
-}) {
-  const cols = grid[0]?.length ?? 0
-  return (
-    <div
-      className="inline-grid gap-1.5"
-      style={{ gridTemplateColumns: `repeat(${cols}, 5rem)` }}
-    >
-      {grid.map((row, r) =>
-        row.map((val, c) => (
-          <input
-            key={`${r}-${c}`}
-            type="number"
-            step="any"
-            value={val}
-            onChange={(e) => onCell(r, c, Number(e.target.value))}
-            className="h-10 w-20 rounded border border-slate-700 bg-slate-900 px-2 text-center font-mono text-sm text-slate-100 focus:border-violet-500 focus:outline-none"
-          />
-        )),
-      )}
-    </div>
   )
 }
 
@@ -392,7 +324,7 @@ function IMTPanel({
 }: {
   trace: InverseTraceJS
   eroCount: number
-  det: number | null
+  det: number
 }) {
   const { n, invertible, rank, nullity, colsIndependent } = trace
   const sub = SUBSCRIPT[n as Size] ?? 'ₙ'
@@ -423,18 +355,16 @@ function IMTPanel({
       ok: colsIndependent,
     },
     {
+      label: 'det(A) ≠ 0',
+      value: `det = ${fmt(det)}`,
+      ok: Math.abs(det) > 1e-9,
+    },
+    {
       label: 'A 可寫成基本矩陣的乘積',
       value: invertible ? `A = E₁⁻¹⋯Eₖ⁻¹(k = ${eroCount})` : '不可',
       ok: invertible,
     },
   ]
-  if (det != null) {
-    conditions.splice(5, 0, {
-      label: 'det(A) ≠ 0',
-      value: `det = ${fmt(det)}`,
-      ok: Math.abs(det) > 1e-9,
-    })
-  }
   return (
     <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-5">
       <h2 className="text-sm font-medium text-slate-300">

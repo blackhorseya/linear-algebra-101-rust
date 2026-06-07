@@ -47,6 +47,7 @@
 - [x] 行列式(實用版,得正名)`determinant`(Theorem 3.3:Gaussian forward 消去 O(n³),只准 swap(記翻號 (−1)^r)與 add(det 不變)、絕不 scale;奇異時 early return 精確 0.0、自換不翻號;laws:與定義版及三角 fast path 對帳 —— 三路對帳網閉合,12×12 釘 O(n³) vs O(n!) 的結構性差距)
 - [x] 行列式三大代數性質 laws(Theorem 3.4:(a) 可逆 ⟺ det ≠ 0(與可逆矩陣章會師)、(b) det(AB) = det A · det B(乘法積性,量級放大需**相對容差**)、(c) det Aᵀ = det A(行列對稱)—— 本章 laws 收官,把 det 與 IMT、乘法、轉置縫起來)
 - [x] 基本矩陣的行列式 laws(Theorem 3.3(d):det E 規律 swap → −1、scale(c) → c、add → 1(E 從 I 經一次 ERO 套三部曲)+ det(EA) = det E · det A —— elimination 的 ERO、inverse 的基本矩陣、determinant 三章會師;單元 6-1 其餘題目皆 5-5 已收,零新 API 純 reuse)
+- [x] 行列式互動圖解:拖 î′、ĵ′ 看單位正方形的像 —— |det| = 面積縮放、det < 0 翻面、det = 0 塌縮成線;3×3 / 4×4 推廣為(超)體積,可在 [web 視覺化](#視覺化)操作(det 路(Gaussian 消去)與 rank 路(`is_invertible`)兩條獨立計算當場對帳 Theorem 3.4(a))
 
 ### 5. 線性轉換(Linear Transformation)
 - [x] 矩陣作為函數:`Transformation`(A 誘導 T_A: ℝⁿ → ℝᵐ)、定義域 / 對應域維度 `domain_dim` / `codomain_dim` / `dimensions`
@@ -99,7 +100,7 @@ cargo llvm-cov
 
 ## 視覺化
 
-`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)與「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)、「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)與「行列式」(拖 î′ / ĵ′ 看單位正方形的像的有號面積,3×3 / 4×4 推廣為(超)體積,det 路與 rank 路由 core 獨立計算、當場對帳 Theorem 3.4(a))的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
 
 WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
 

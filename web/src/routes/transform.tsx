@@ -34,7 +34,7 @@ function TransformDemo() {
   const parallel = linalg.areParallel(v.x, v.y, tx, ty)
 
   // 行列式 = 單位正方形像的有號面積(由 WASM 算)。
-  const det = linalg.determinant(m.a, m.b, m.c, m.d)
+  const det = linalg.determinant([m.a, m.b, m.c, m.d], 2)
   const detClass =
     Math.abs(det) < 1e-9
       ? 'text-red-400'

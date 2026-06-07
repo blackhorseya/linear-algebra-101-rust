@@ -11,46 +11,43 @@ import {
   hitTest,
   label,
   makeViewport,
-  ORIGIN_EPS,
-  strokeLine,
   useSquareSize,
-  WORLD_HALF,
   type Handle,
   type Matrix2x2,
-  type Vec2,
   type Viewport,
 } from '../lib/canvas'
+import { fmt } from '../lib/format'
 
-interface TransformCanvasProps {
+interface DeterminantCanvasProps {
   linalg: Linalg
   m: Matrix2x2
-  v: Vec2
   onChangeMatrix: (m: Matrix2x2) => void
-  onChangeV: (v: Vec2) => void
 }
 
-// transform 專屬色票(結構色在 canvas.ts 的 BASE_COLORS)
+// determinant 專屬色票(結構色在 canvas.ts 的 BASE_COLORS;
+// î/ĵ 與正負定向的配色沿 TransformCanvas,跨頁一致)
 const COLORS = {
   tGrid: '#4c4368', // 變換後網格(violet 偏暗)
   tGridAxis: '#7c6db0', // 變換後座標軸的像(亮一點)
   iHat: '#34d399', // emerald-400
   jHat: '#f87171', // red-400
-  v: '#a78bfa', // violet-400
-  av: '#fbbf24', // amber-400
-  eigen: '#34d399', // emerald 虛線(特徵方向)
-  squarePos: 'rgba(167,139,250,0.12)', // det>0:violet(定向不變)
-  squareNeg: 'rgba(251,191,36,0.12)', // det<0:amber(平面翻面)
+  unitSquare: '#94a3b8', // slate-400:變換前的單位正方形(虛線輪廓)
+  squarePos: 'rgba(167,139,250,0.22)', // det>0:violet(定向不變)
+  squareNeg: 'rgba(251,191,36,0.22)', // det<0:amber(翻面)
+  outlinePos: '#a78bfa', // violet-400
+  outlineNeg: '#fbbf24', // amber-400
+  collapsed: '#fb7185', // rose-400:塌縮成線(det = 0)
 } as const
 
-function drawTransform(
+function drawDeterminant(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   linalg: Linalg,
   m: Matrix2x2,
-  v: Vec2,
 ) {
   const S = vp.toScreen
   const origin = S(0, 0)
+  const flat = [m.a, m.b, m.c, m.d]
 
   // 變換後網格(每條線的像都靠 WASM transformPoint 算端點)
   ctx.save()
@@ -62,24 +59,61 @@ function drawTransform(
   }
   ctx.restore()
 
-  // 單位方格的像(平行四邊形)。遠角 î'+ĵ' 由 WASM 取得,JS 不做加法。
-  // 面積 = |det|;det<0 代表翻面,用顏色區分(det 也由 WASM 算)。
+  // 「變換前」:單位正方形(虛線輪廓,面積恆為 1 的基準)
+  ctx.save()
+  ctx.strokeStyle = COLORS.unitSquare
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 4])
+  ctx.beginPath()
+  ctx.moveTo(origin[0], origin[1])
+  const sq10 = S(1, 0)
+  const sq11 = S(1, 1)
+  const sq01 = S(0, 1)
+  ctx.lineTo(sq10[0], sq10[1])
+  ctx.lineTo(sq11[0], sq11[1])
+  ctx.lineTo(sq01[0], sq01[1])
+  ctx.closePath()
+  ctx.stroke()
+  ctx.restore()
+
+  // 「變換後」:單位正方形的像(平行四邊形)。遠角 î'+ĵ' 由 WASM 取得,
+  // JS 不做向量加法;det(面積與定向)與塌縮判定也都由 WASM 算 ——
+  // 顏色走 det 路(正負定向),塌縮樣式走 is_invertible 的 rank 路。
   const iTip = S(m.a, m.c)
   const jTip = S(m.b, m.d)
   const farW = linalg.transformPoint(m.a, m.b, m.c, m.d, 1, 1)
   if ([m.a, m.c, m.b, m.d, farW[0], farW[1]].every(Number.isFinite)) {
     const far = S(farW[0], farW[1])
-    const det = linalg.determinant([m.a, m.b, m.c, m.d], 2)
+    const det = linalg.determinant(flat, 2)
+    const collapsed = !linalg.isInvertible(flat, 2)
     ctx.save()
-    ctx.fillStyle = det < 0 ? COLORS.squareNeg : COLORS.squarePos
     ctx.beginPath()
     ctx.moveTo(origin[0], origin[1])
     ctx.lineTo(iTip[0], iTip[1])
     ctx.lineTo(far[0], far[1])
     ctx.lineTo(jTip[0], jTip[1])
     ctx.closePath()
-    ctx.fill()
+    if (collapsed) {
+      // 塌縮:平行四邊形退化成線段,只描邊(rose)讓「面積 = 0」看得見
+      ctx.strokeStyle = COLORS.collapsed
+      ctx.lineWidth = 2.5
+      ctx.stroke()
+    } else {
+      ctx.fillStyle = det < 0 ? COLORS.squareNeg : COLORS.squarePos
+      ctx.fill()
+      ctx.strokeStyle = det < 0 ? COLORS.outlineNeg : COLORS.outlinePos
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+    }
     ctx.restore()
+
+    // 面積標籤放在原點與遠角的螢幕中點(純排版定位,非線代計算)
+    const mid: [number, number] = [
+      (origin[0] + far[0]) / 2,
+      (origin[1] + far[1]) / 2,
+    ]
+    const tag = collapsed ? '面積 = 0' : `|det| = ${fmt(Math.abs(det))}`
+    label(ctx, tag, mid, collapsed ? COLORS.collapsed : COLORS.unitSquare)
   }
 
   // 基底箭頭 î'、ĵ'(端點即拖曳 handle)
@@ -90,37 +124,22 @@ function drawTransform(
   label(ctx, "î'", iTip, COLORS.iHat)
   label(ctx, "ĵ'", jTip, COLORS.jHat)
 
-  // v 與 A·v(A·v 由 WASM 算;平行則高亮特徵方向)
-  const vLen = Math.hypot(v.x, v.y)
-  const vTip = S(v.x, v.y)
-  const av = linalg.transformPoint(m.a, m.b, m.c, m.d, v.x, v.y)
-  const avTip = S(av[0], av[1])
-  const parallel = vLen >= ORIGIN_EPS && linalg.areParallel(v.x, v.y, av[0], av[1])
-
-  if (parallel) {
-    ctx.save()
-    ctx.strokeStyle = COLORS.eigen
-    ctx.globalAlpha = 0.4
-    ctx.setLineDash([6, 5])
-    const ux = v.x / vLen
-    const uy = v.y / vLen
-    strokeLine(ctx, S(-WORLD_HALF * ux, -WORLD_HALF * uy), S(WORLD_HALF * ux, WORLD_HALF * uy))
-    ctx.restore()
-  }
-
-  if (vLen >= ORIGIN_EPS) {
-    drawArrow(ctx, origin, avTip, COLORS.av, parallel ? 4 : 2.5)
-    drawArrow(ctx, origin, vTip, COLORS.v, parallel ? 4 : 2.5)
-    label(ctx, 'A·v', avTip, COLORS.av)
-    label(ctx, 'v', vTip, COLORS.v)
-  }
-  dot(ctx, vTip, COLORS.v) // 近原點時只剩這顆淡點,仍可被抓回來
+  // 單位正方形的「1」基準標籤(虛線框中心;調暗避免搶走像的視覺焦點)
+  const unitMid = S(0.5, 0.5)
+  ctx.save()
+  ctx.globalAlpha = 0.7
+  label(ctx, '面積 1', unitMid, COLORS.unitSquare)
+  ctx.restore()
 }
 
-export function TransformCanvas({ linalg, m, v, onChangeMatrix, onChangeV }: TransformCanvasProps) {
+export function DeterminantCanvas({
+  linalg,
+  m,
+  onChangeMatrix,
+}: DeterminantCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const draggingRef = useRef<'iHat' | 'jHat' | 'v' | null>(null)
+  const draggingRef = useRef<'iHat' | 'jHat' | null>(null)
   const size = useSquareSize(containerRef)
 
   useLayoutEffect(() => {
@@ -130,22 +149,22 @@ export function TransformCanvas({ linalg, m, v, onChangeMatrix, onChangeV }: Tra
     if (!ctx) return
     const vp = makeViewport(size)
     drawReferenceGrid(ctx, vp)
-    drawTransform(ctx, vp, linalg, m, v)
-  }, [linalg, m, v, size])
+    drawDeterminant(ctx, vp, linalg, m)
+  }, [linalg, m, size])
 
-  // handlers 由 React 每次 render 重建,必看到最新 m/v(無 stale closure)
-  const buildHandles = (vp: Viewport): Handle<'iHat' | 'jHat' | 'v'>[] => {
-    const [vx, vy] = vp.toScreen(v.x, v.y)
+  // handlers 由 React 每次 render 重建,必看到最新 m(無 stale closure)
+  const buildHandles = (vp: Viewport): Handle<'iHat' | 'jHat'>[] => {
     const [ix, iy] = vp.toScreen(m.a, m.c)
     const [jx, jy] = vp.toScreen(m.b, m.d)
     return [
-      { id: 'v', sx: vx, sy: vy, priority: 0 },
-      { id: 'iHat', sx: ix, sy: iy, priority: 1 },
-      { id: 'jHat', sx: jx, sy: jy, priority: 2 },
+      { id: 'iHat', sx: ix, sy: iy, priority: 0 },
+      { id: 'jHat', sx: jx, sy: jy, priority: 1 },
     ]
   }
 
-  const pointerPos = (e: React.PointerEvent<HTMLCanvasElement>): [number, number] => {
+  const pointerPos = (
+    e: React.PointerEvent<HTMLCanvasElement>,
+  ): [number, number] => {
     const rect = e.currentTarget.getBoundingClientRect()
     return [e.clientX - rect.left, e.clientY - rect.top]
   }
@@ -170,19 +189,11 @@ export function TransformCanvas({ linalg, m, v, onChangeMatrix, onChangeV }: Tra
       e.currentTarget.style.cursor = hit ? 'grab' : 'crosshair'
       return
     }
-    const [wx, wy] = vp.toWorld(px, py)
-    const x = wx === 0 ? 0 : wx
-    const y = wy === 0 ? 0 : wy
-    switch (draggingRef.current) {
-      case 'v':
-        onChangeV({ x, y })
-        break
-      case 'iHat':
-        onChangeMatrix({ ...m, a: x, c: y })
-        break
-      case 'jHat':
-        onChangeMatrix({ ...m, b: x, d: y })
-        break
+    const [x, y] = vp.toWorld(px, py)
+    if (draggingRef.current === 'iHat') {
+      onChangeMatrix({ ...m, a: x, c: y })
+    } else {
+      onChangeMatrix({ ...m, b: x, d: y })
     }
   }
 

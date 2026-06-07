@@ -72,7 +72,7 @@ function drawWorking(
   const jTip = S(m.b, m.d)
   const farW = linalg.transformPoint(m.a, m.b, m.c, m.d, 1, 1)
   if ([m.a, m.c, m.b, m.d, farW[0], farW[1]].every(Number.isFinite)) {
-    const det = linalg.determinant(m.a, m.b, m.c, m.d)
+    const det = linalg.determinant([m.a, m.b, m.c, m.d], 2)
     const far = S(farW[0], farW[1])
     ctx.save()
     ctx.fillStyle = det < 0 ? COLORS.squareNeg : COLORS.squarePos
