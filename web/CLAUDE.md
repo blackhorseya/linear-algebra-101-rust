@@ -15,23 +15,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 沒有 test runner:數學正確性由 Rust core 的測試保證(`task test`),前端只是繪圖與互動層,目前不另寫 JS 測試。
 
-**先決條件**:`src/lib/wasm/` 是 wasm-pack 產物且整個被 gitignore —— fresh clone 直接 `pnpm dev` 會掛。先在 **repo 根目錄**跑 `task wasm:build` 產出它;改了 `src/wasm.rs` 之後也要重跑。
+**先決條件**:`src/lib/wasm/` 是 wasm-pack 產物且整個被 gitignore —— fresh clone 直接 `pnpm dev` 會掛。先在 **repo 根目錄**跑 `task wasm:build` 產出它;改了 `src/wasm/` 之後也要重跑。
 
 ## 架構:資料怎麼流
 
 ```
 src/routes/*.tsx(頁面,持有狀態)
   → useQuery(['linalg'], loadLinalg)     # 唯一非同步點:WASM 初始化
-  → Linalg 介面(src/lib/linalg.ts)       # 同步呼叫,計算全在 Rust
+  → Linalg 介面(src/lib/linalg/)         # 同步呼叫,計算全在 Rust
   → src/lib/wasm/*(wasm-bindgen glue,生成物)
 ```
 
-### WASM 邊界:全部鎖在 `src/lib/linalg.ts`
+### WASM 邊界:全部鎖在 `src/lib/linalg/`
 
-- **只有 `linalg.ts` 可以 import `src/lib/wasm/`**。其他程式碼一律透過它 export 的 `Linalg` 介面取用運算,看不到 wasm-bindgen 的型別。
+- **只有 `src/lib/linalg/` 內的模組可以 import `src/lib/wasm/`**。其他程式碼一律 import `'../lib/linalg'`(解析到 `linalg/index.ts`),透過它 export 的 `Linalg` 介面取用運算,看不到 wasm-bindgen 的型別。
+- **目錄結構鏡像 `src/wasm/`(一章一檔)**:每個視覺化章一支(`transform` / `determinant` / `multiply` / `elimination` / `inverse` / `linearity` / `standard-matrix` / `range` / `composition`),各自 export `XxxOps` 介面 + 同名實作物件;`index.ts` 對應 `mod.rs`,只負責組裝(`Linalg extends` 各章 Ops、`loadLinalg()` spread 合併)與型別 re-export;跨章共用的 SoA 切片工具在私有的 `helpers.ts`(對應 `helpers.rs`,不經 index re-export)。
 - `loadLinalg()` 用模組層級變數 memoize init Promise(配 Query 的 `staleTime: Infinity` 雙重保險),整個 app 只初始化一次。`.wasm` 用 Vite 的 `?url` import 餵給 `init()`。
-- **複雜回傳值用 SoA + `free()` 模式**(見 `runEliminate`):WASM 端以 Structure-of-Arrays 平行陣列輸出(每個欄位一條 typed array,少跨界),`linalg.ts` 縫回 plain-JS 物件後立刻 `free()` —— 呼叫端拿到的物件不持有任何 WASM 指標,不必管生命週期。WASM 端的 u8 編碼(phase、solution kind)→ 字串的對照表順序必須與 `src/wasm.rs` 一致。
-- **新增一個 binding 的流程**:`src/wasm.rs` 加 export(根目錄那邊的規矩見根 CLAUDE.md)→ `task wasm:build` → 在 `linalg.ts` 的 `Linalg` 介面補型別與綁定 → 頁面經 `linalg.xxx()` 使用。
+- **複雜回傳值用 SoA + `free()` 模式**(見 `elimination.ts` 的 `runEliminate`):WASM 端以 Structure-of-Arrays 平行陣列輸出(每個欄位一條 typed array,少跨界),章模組縫回 plain-JS 物件後立刻 `free()` —— 呼叫端拿到的物件不持有任何 WASM 指標,不必管生命週期。WASM 端的 u8 編碼(phase、solution kind、ero)→ 字串的對照表放在各自的章內,順序必須與 `src/wasm/` 對應章一致;跨章共用的編碼(如 `SOLUTION_NAMES`)依 Rust 端的依賴方向歸屬(定義在 `elimination`,`range` 引用)。
+- **新增一個 binding 的流程**:`src/wasm/<章>.rs` 加 export(根目錄那邊的規矩見根 CLAUDE.md)→ `task wasm:build` → 在 `linalg/<章>.ts` 的 `XxxOps` 補型別與綁定(新章則加新檔並掛進 `index.ts`)→ 頁面經 `linalg.xxx()` 使用。
 
 ### Query 的角色:memoize 本地計算,不是同步 server state
 
