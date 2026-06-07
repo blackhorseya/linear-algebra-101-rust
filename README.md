@@ -61,6 +61,7 @@
 - [x] 值域覆蓋互動圖解:拖動行向量看 Range(T) = Col(A) 從平面塌成直線,拖 w 看可達性即時判定,可在 [web 視覺化](#視覺化)操作(可達性 / 基底 / 映成 / 不可達見證全由 core 的 `range` 模組當場計算)
 - [x] 標準矩陣取樣互動圖解:選幾何規則(旋轉 / 反射 / 剪切⋯)看 T(e₁)、T(e₂) 直放成 A 的行,可在 [web 視覺化](#視覺化)操作(矩陣由 core 的 `standard_matrix` 當場取樣,「規則路徑 vs 矩陣路徑」兩路對帳)
 - [x] 守恆律互動圖解:拖動 u、v 看 shear / 投影下的影像,T(u+v) 與 T(u)+T(v) 永遠重合,可在 [web 視覺化](#視覺化)操作(✓ 由 core 的 `verify_linearity` 經 WASM 當場驗證)
+- [x] 一對一判定 `is_one_to_one`(Theorem 2.11:1-1 ⟺ rank(A) = n ⟺ nullity = 0 —— 與 `is_onto` 完美對偶,同一個 rank 兩端各問一次;laws:nullity 交叉驗證、寬矮必非 1-1(鴿籠)、轉置對偶(T_A 1-1 ⟺ T_{Aᵀ} onto)、方陣 1-1 ⟺ 可逆(IMT))
 
 ### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)

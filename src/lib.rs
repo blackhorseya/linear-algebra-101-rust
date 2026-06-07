@@ -5,6 +5,7 @@
 //! Vector(運算 + linear_combination + 標準基底 eᵢ)、System(線性方程組 Ax=b)。
 
 pub mod basis;
+pub mod composition;
 pub mod coordinates;
 pub mod diagonal;
 pub mod elimination;
