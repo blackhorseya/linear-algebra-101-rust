@@ -128,6 +128,78 @@ impl Matrix {
         }
         Ok(det)
     }
+
+    /// 是否為**上三角矩陣**(upper triangular):主對角線**以下**(i > j)的
+    /// 每一格量值都在 `epsilon` 內(算零)—— 非零元素只准住在對角線含以上。
+    ///
+    /// 只對方陣談三角形;**非方陣 → `false`**(述詞回答「是不是」,不是錯誤
+    /// —— 沿 `report`「非方陣恆 false」的精神)。對角矩陣上下皆 true;
+    /// 0×0 與 1×1 沒有 off-diagonal 可違規 → vacuous true。
+    ///
+    /// 實作提示(題目提示的直譯):走訪所有 i > j 的位置檢查
+    /// `|v| <= epsilon` —— 雙層迭代配 `all`,或雙層 `for` 提前 `return false`。
+    pub fn is_upper_triangular(&self, epsilon: f64) -> bool {
+        if !self.is_square() {
+            return false; // 非方陣不談三角形 → false(述詞回答「是不是」,不是錯誤)
+        }
+        for i in 0..self.rows() {
+            for j in 0..i {
+                if self.row(i).unwrap()[j].abs() > epsilon {
+                    return false; // i > j 的位置有非零 → 不是上三角
+                }
+            }
+        }
+        true
+    }
+
+    /// 是否為**下三角矩陣**(lower triangular):主對角線**以上**(i < j)
+    /// 全為零(量值 ≤ `epsilon`)—— [`is_upper_triangular`](Matrix::is_upper_triangular)
+    /// 的鏡像,非方陣同樣 `false`。
+    ///
+    /// 實作提示:兩條路 —— (a) 委派 `self.transpose().is_upper_triangular(eps)`
+    /// (一行,但 laws 的轉置對偶律會退化成恆真式、失去獨立驗證的牙齒);
+    /// (b) **獨立寫對稱迴圈**(i < j),讓「lower(A) ⟺ upper(Aᵀ)」維持
+    /// 兩條獨立路徑互相對帳。建議 (b) —— law 要有東西可咬。
+    pub fn is_lower_triangular(&self, epsilon: f64) -> bool {
+        if !self.is_square() {
+            return false; // 非方陣不談三角形 → false(述詞回答「是不是」,不是錯誤)
+        }
+        for i in 0..self.rows() {
+            for j in i + 1..self.cols() {
+                if self.row(i).unwrap()[j].abs() > epsilon {
+                    return false; // i < j 的位置有非零 → 不是下三角
+                }
+            }
+        }
+        true
+    }
+
+    /// 行列式 —— **三角矩陣快速路徑**(Theorem 3.2):上**或**下三角的方陣,
+    /// det = 主對角線分量的乘積,O(n) 一條對角線掃完;不是三角(或非方陣)
+    /// 回 `None`。
+    ///
+    /// 為什麼對:下三角沿第一**列**展開,活著的只有 a₁₁ 那項(其餘被 0 乘掉),
+    /// det = a₁₁ · det(右下角子陣)—— 子陣仍下三角,歸納剝完恰是對角線乘積;
+    /// 上三角同理(沿第一**行**展開,或用練 5 的 det Aᵀ = det A 鏡射過去)。
+    ///
+    /// **`Option` 而非 `Result`**:「不是三角」不是錯誤,是 fast path
+    /// **不適用** —— 呼叫端拿 `None` 就 fallback 到一般算法(沿
+    /// `unreachable_vector` 的 Option 語感)。對角線含 0 **不特判**:仍是
+    /// 三角、乘積自然為 0(題目驗收)。0×0 → `Some(1.0)`(空積,與
+    /// `determinant_recursive` 的 base 同一個慣例 —— 兩條路在邊界也對齊)。
+    ///
+    /// `epsilon`:三角判定的判零門檻(委派給兩支述詞)。
+    ///
+    /// 實作提示:先問兩支述詞(`||`),不是三角回 `None`;是 → 對角線
+    /// `(0..n).map(|i| row(i)[i]).product()`(`product` 對空迭代器回 1.0,
+    /// 0×0 的空積**免費**)。
+    pub fn determinant_triangular(&self, epsilon: f64) -> Option<f64> {
+        if self.is_upper_triangular(epsilon) || self.is_lower_triangular(epsilon) {
+            Some((0..self.rows()).map(|i| self.row(i).unwrap()[i]).product())
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +346,107 @@ mod tests {
             LinAlgError::NotSquare { rows: 2, cols: 3 }
         );
     }
+
+    /// 題目範例:上三角偵測 —— 對角線以下全零、以上隨意。
+    #[test]
+    fn upper_triangular_is_detected() {
+        let a = Matrix::from_rows(vec![
+            vec![3.0, -4.0, -7.0],
+            vec![0.0, 8.0, -2.0],
+            vec![0.0, 0.0, 9.0],
+        ]);
+        assert!(a.is_upper_triangular(1e-9));
+        assert!(!a.is_lower_triangular(1e-9));
+    }
+
+    /// 鏡像:下三角偵測。
+    #[test]
+    fn lower_triangular_is_detected() {
+        let a = Matrix::from_rows(vec![
+            vec![3.0, 0.0, 0.0],
+            vec![5.0, 8.0, 0.0],
+            vec![1.0, -2.0, 9.0],
+        ]);
+        assert!(a.is_lower_triangular(1e-9));
+        assert!(!a.is_upper_triangular(1e-9));
+    }
+
+    /// 對角矩陣同時是上三角**且**下三角(兩個述詞不互斥)。
+    #[test]
+    fn diagonal_is_both_upper_and_lower_triangular() {
+        let d = Matrix::from_rows(vec![vec![2.0, 0.0], vec![0.0, 3.0]]);
+        assert!(d.is_upper_triangular(1e-9));
+        assert!(d.is_lower_triangular(1e-9));
+    }
+
+    /// 題目驗收:非三角矩陣要正確識別(兩側都有非零 → 兩個述詞都 false)。
+    #[test]
+    fn dense_matrix_is_not_triangular() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert!(!a.is_upper_triangular(1e-9));
+        assert!(!a.is_lower_triangular(1e-9));
+    }
+
+    /// 非方陣不談三角形 → 兩個述詞恆 false(述詞回答「是不是」,不是錯誤)。
+    #[test]
+    fn non_square_is_not_triangular() {
+        let a = Matrix::from_rows(vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]]);
+        assert!(!a.is_upper_triangular(1e-9));
+        assert!(!a.is_lower_triangular(1e-9));
+    }
+
+    /// 浮點殘差場景:對角線以下殘留 1e-12(消去殘渣量級)→ 在 1e-9 門檻下
+    /// 仍判上三角 —— epsilon 存在的理由。
+    #[test]
+    fn epsilon_tolerates_tiny_off_diagonal_residue() {
+        let a = Matrix::from_rows(vec![vec![3.0, 5.0], vec![1e-12, 8.0]]);
+        assert!(a.is_upper_triangular(1e-9));
+        assert!(!a.is_upper_triangular(0.0)); // 精確模式下殘渣就是非零
+    }
+
+    /// 題目範例:3 × 8 × 9 = 216。
+    #[test]
+    fn determinant_triangular_multiplies_diagonal() {
+        let a = Matrix::from_rows(vec![
+            vec![3.0, -4.0, -7.0],
+            vec![0.0, 8.0, -2.0],
+            vec![0.0, 0.0, 9.0],
+        ]);
+        assert_eq!(a.determinant_triangular(1e-9), Some(216.0));
+    }
+
+    /// 題目驗收:對角線含 0 → 結果為 0(仍是三角,乘積自然歸零,不特判)。
+    #[test]
+    fn determinant_triangular_with_zero_on_diagonal_is_zero() {
+        let a = Matrix::from_rows(vec![
+            vec![3.0, -4.0, -7.0],
+            vec![0.0, 0.0, -2.0],
+            vec![0.0, 0.0, 9.0],
+        ]);
+        assert_eq!(a.determinant_triangular(1e-9), Some(0.0));
+    }
+
+    /// 題目驗收:非三角 → None(fast path 不適用,呼叫端自行 fallback)。
+    #[test]
+    fn determinant_triangular_of_dense_is_none() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert_eq!(a.determinant_triangular(1e-9), None);
+    }
+
+    /// 非方陣 → None(連三角都談不上)。
+    #[test]
+    fn determinant_triangular_of_non_square_is_none() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(a.determinant_triangular(1e-9), None);
+    }
+
+    /// 0×0 → Some(1.0):空積慣例 —— 與 determinant_recursive 的 base 在
+    /// 邊界上對齊(兩條路連退化案例都算同一個數)。
+    #[test]
+    fn determinant_triangular_of_0x0_is_one() {
+        let a = Matrix::from_rows(vec![]);
+        assert_eq!(a.determinant_triangular(1e-9), Some(1.0));
+    }
 }
 
 /// 行列式章的 property test —— 主軸是「同一個數,三種算法」,laws 隨練習
@@ -293,6 +466,12 @@ mod laws {
                     .collect(),
             )
         })
+    }
+
+    /// 隨機形狀(1..=4 × 1..=4)的整數矩陣 —— 三角述詞的轉置對偶律要掃到
+    /// 非方陣(兩個述詞對非方陣同回 false,轉置兩側仍要一致)。
+    fn int_matrix_any_shape() -> impl Strategy<Value = Matrix> {
+        (1usize..=4, 1usize..=4).prop_flat_map(|(rows, cols)| int_matrix(rows, cols))
     }
 
     /// 2..=5 × 2..=5 的矩陣連同一組界內 (row, col) —— 先抽形狀、再抽內容與
@@ -322,6 +501,38 @@ mod laws {
                 let n = m.rows();
                 (m, i, (i + 1 + offset) % n)
             })
+    }
+
+    /// 把不滿足 `keep(i, j)` 的格子清零、其餘照搬 —— 模組外碰不到 `data`,
+    /// 用 `row` + `from_rows` 重建(三角策略的共用積木)。
+    fn zero_unless(m: &Matrix, keep: fn(usize, usize) -> bool) -> Matrix {
+        Matrix::from_rows(
+            (0..m.rows())
+                .map(|i| {
+                    m.row(i)
+                        .unwrap()
+                        .iter()
+                        .enumerate()
+                        .map(|(j, &v)| if keep(i, j) { v } else { 0.0 })
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
+    /// 隨機**上三角**整數方陣(1..=4):先抽滿矩陣,再把對角線以下清零 ——
+    /// **依建構**必為上三角,免 prop_assume。
+    fn upper_triangular_int_matrix() -> impl Strategy<Value = Matrix> {
+        (1usize..=4)
+            .prop_flat_map(|n| int_matrix(n, n))
+            .prop_map(|m| zero_unless(&m, |i, j| i <= j))
+    }
+
+    /// 隨機**下三角**整數方陣(1..=4):鏡像,把對角線以上清零。
+    fn lower_triangular_int_matrix() -> impl Strategy<Value = Matrix> {
+        (1usize..=4)
+            .prop_flat_map(|n| int_matrix(n, n))
+            .prop_map(|m| zero_unless(&m, |i, j| i >= j))
     }
 
     proptest! {
@@ -405,6 +616,43 @@ mod laws {
             prop_assert_eq!(
                 added.determinant_recursive().unwrap(),
                 m.determinant_recursive().unwrap()
+            );
+        }
+
+        // 「同一個數」第一回合:上三角的 fast path(對角線乘積)必與定義版
+        // (餘因子展開)同值 —— Theorem 3.2 不是另一個行列式,是同一個數的
+        // 快捷算法。整數三角矩陣兩條路都精確,Some 包著精確相等。
+        #[test]
+        fn triangular_fast_path_agrees_with_recursive_on_upper(
+            m in upper_triangular_int_matrix(),
+        ) {
+            prop_assert_eq!(
+                m.determinant_triangular(0.0), // 整數零就是零,精確判定
+                Some(m.determinant_recursive().unwrap())
+            );
+        }
+
+        // 鏡像:下三角同樣對帳(展開沿第一列,下三角是「每層只活一項」
+        // 最直接的那一側)。
+        #[test]
+        fn triangular_fast_path_agrees_with_recursive_on_lower(
+            m in lower_triangular_int_matrix(),
+        ) {
+            prop_assert_eq!(
+                m.determinant_triangular(0.0),
+                Some(m.determinant_recursive().unwrap())
+            );
+        }
+
+        // 轉置對偶(任意形狀,含非方陣):lower(A) ⟺ upper(Aᵀ)——
+        // 「對角線以下」轉置後變「對角線以上」。兩支述詞獨立實作,
+        // 這條 law 才有牙齒(委派 transpose 實作會讓它退化成恆真式);
+        // 也是練 5 det Aᵀ = det A 在結構層的前奏。
+        #[test]
+        fn lower_triangular_iff_transpose_is_upper(m in int_matrix_any_shape()) {
+            prop_assert_eq!(
+                m.is_lower_triangular(0.0),
+                m.transpose().is_upper_triangular(0.0)
             );
         }
     }
