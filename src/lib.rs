@@ -23,6 +23,7 @@ pub mod vector;
 pub mod wasm;
 
 pub use basis::{is_basis, is_standard_basis};
+pub use composition::TransformationReport;
 pub use coordinates::{coordinates, from_coordinates};
 pub use diagonal::DiagonalMatrix;
 pub use error::LinAlgError;

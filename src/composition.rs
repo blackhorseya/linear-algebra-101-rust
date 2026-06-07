@@ -22,6 +22,27 @@
 
 use crate::{LinAlgError, Transformation};
 
+/// 可逆性綜合判定表(練習 4):講義 2.8 章末 Summary Table 的程式版 ——
+/// 一次回答「一對一?映成?可逆?」三問。
+///
+/// **欄位公開**(全 repo 唯一背離「欄位一律 private」慣例的型別):private
+/// 慣例是為了守不變式,而 report 是純輸出值、沒有不變式可守 —— 三個 bool
+/// 的具名 tuple,getter 只是儀式。「方陣時三欄必定一致」**不是**建構時要擋
+/// 的約束,而是要拿 proptest 證明的定理(IMT 三位一體,見 laws)——
+/// 把它鎖進建構子反而蓋掉了值得證明的東西。
+///
+/// derive `Copy`:三個 bool 的值語意,複製比借用便宜也直觀。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransformationReport {
+    /// 一對一(Theorem 2.11:rank = n)—— 輸入端不浪費。
+    pub is_one_to_one: bool,
+    /// 映成(Theorem 2.10:rank = m)—— 輸出端蓋滿。
+    pub is_onto: bool,
+    /// 可逆(Theorem 2.12:雙射 ⟺ 1-1 **且** onto)—— 非方陣恆 false
+    /// (rank 搆不到兩端,合取自動判死,不需特判)。
+    pub is_invertible: bool,
+}
+
 impl Transformation {
     /// 合成(composition):**(U ∘ T)(x) = U(T(x))**,先施 T、再施 U ——
     /// `self` 是外層 U,讀法與數學記法 ∘ 同向:`u.compose(&t)` = U ∘ T。
@@ -95,11 +116,37 @@ impl Transformation {
     pub fn inverse(&self, epsilon: f64) -> Result<Transformation, LinAlgError> {
         self.matrix().inverse(epsilon).map(Transformation::new)
     }
+
+    /// 可逆性綜合判定(練習 4):一次產出 Summary Table 的三個答案。
+    ///
+    /// 全章四題在此合流 —— 三欄全是本章與 5-3 已刻好的述詞,**這題沒有
+    /// 任何新判定,只有組裝**:
+    /// - `is_one_to_one`:練習 1(rank = n);
+    /// - `is_onto`:5-3(rank = m);
+    /// - `is_invertible`:**1-1 且 onto**(Theorem 2.12 的雙射定義)——
+    ///   可逆的「定義」是雙射,「⟺ A 可逆」是定理(Theorem 2.13):
+    ///   定義當實作、定理當 law(`report_invertible_agrees_with_matrix`),
+    ///   概念依賴方向才對 —— 與 `verify_linearity`「定義與定理分開放」同款。
+    ///
+    /// 三欄各自獨立計算、不互相推導 —— 「方陣時三欄必一致」(IMT)是
+    /// laws 要證的定理,不是實作要維護的不變式。
+    ///
+    /// 實作提示:struct literal 三行,每行接一個既有述詞 —— 注意
+    /// `is_invertible` 那行就是 Theorem 2.12 用 `&&` 寫出來的樣子。
+    pub fn report(&self, epsilon: f64) -> TransformationReport {
+        let is_one_to_one = self.is_one_to_one(epsilon);
+        let is_onto = self.is_onto(epsilon);
+        TransformationReport {
+            is_one_to_one,
+            is_onto,
+            is_invertible: is_one_to_one && is_onto,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{LinAlgError, Matrix, Transformation, Vector};
+    use crate::{LinAlgError, Matrix, Transformation, TransformationReport, Vector};
 
     /// 題目原例(一):2×3 矩陣(ℝ³ → ℝ²)—— n = 3 > m = 2,鴿籠直接判死:
     /// rank ≤ 2 < 3,三維輸入擠進二維輸出必有相撞。
@@ -284,6 +331,76 @@ mod tests {
         let x = Vector::from_vec(vec![4.0, -7.0]);
         let round_trip = t_inv.apply(&t.apply(&x).unwrap()).unwrap();
         assert!(round_trip.approx_equals(&x, 1e-9), "T⁻¹(T(x)) ≠ x");
+    }
+
+    /// 練習 4 題目原例:3×3 但 rank 2(第三列 = 前兩列之和)—— 方陣卻
+    /// 樣樣落空:不 1-1(行相依)、不映成(rank < 3)、不可逆(IMT 連坐)。
+    #[test]
+    fn report_of_rank_deficient_square_is_all_false() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 1.0],
+            vec![0.0, 1.0, 1.0],
+            vec![1.0, 1.0, 2.0],
+        ]));
+        assert_eq!(
+            t.report(1e-9),
+            TransformationReport {
+                is_one_to_one: false,
+                is_onto: false,
+                is_invertible: false,
+            }
+        );
+    }
+
+    /// 可逆方陣:Summary Table 全亮 —— rank = n = m,三問同答(IMT)。
+    #[test]
+    fn report_of_invertible_square_is_all_true() {
+        let t = Transformation::new(Matrix::from_rows(vec![vec![2.0, 1.0], vec![1.0, 1.0]]));
+        assert_eq!(
+            t.report(1e-9),
+            TransformationReport {
+                is_one_to_one: true,
+                is_onto: true,
+                is_invertible: true,
+            }
+        );
+    }
+
+    /// 嵌入(3×2 滿行秩):1-1 卻不映成 —— 非方陣的「半套」之一,
+    /// is_invertible 被合取自動判死(題目驗收:非方陣恆 false)。
+    #[test]
+    fn report_of_embedding_is_one_to_one_only() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![0.0, 0.0],
+        ]));
+        assert_eq!(
+            t.report(1e-9),
+            TransformationReport {
+                is_one_to_one: true,
+                is_onto: false,
+                is_invertible: false,
+            }
+        );
+    }
+
+    /// 投影(2×3 滿列秩):映成卻不 1-1 —— 「半套」的另一半,與嵌入
+    /// 互為鏡像;兩支測試合起來:單獨哪一半都換不到可逆。
+    #[test]
+    fn report_of_projection_is_onto_only() {
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+        ]));
+        assert_eq!(
+            t.report(1e-9),
+            TransformationReport {
+                is_one_to_one: false,
+                is_onto: true,
+                is_invertible: false,
+            }
+        );
     }
 }
 
@@ -489,6 +606,51 @@ mod laws {
             prop_assert_eq!(
                 t.inverse(EPS).is_ok(),
                 t.is_one_to_one(EPS) && t.is_onto(EPS)
+            );
+        }
+
+        // 練習 4 快照律:report 的三欄與三個獨立述詞逐欄一致 —— report
+        // 只是組裝,不准有自己的意見(invertible 欄對 inverse().is_ok()
+        // 即 Theorem 2.12 再走一次)。
+        #[test]
+        fn report_agrees_with_individual_predicates(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a);
+            let r = t.report(EPS);
+            prop_assert_eq!(r.is_one_to_one, t.is_one_to_one(EPS));
+            prop_assert_eq!(r.is_onto, t.is_onto(EPS));
+            prop_assert_eq!(r.is_invertible, t.inverse(EPS).is_ok());
+        }
+
+        // Theorem 2.13 對帳(拍板的設計決策):report 走函數視角
+        // (1-1 && onto,Theorem 2.12 的雙射定義),Matrix::is_invertible
+        // 走矩陣視角(RREF = Iₙ)—— 定義當實作、定理當 law,兩條獨立
+        // 路徑必須處處同答案(非方陣:合取判死 vs is_square 短路,同 false)。
+        #[test]
+        fn report_invertible_agrees_with_matrix(a in int_matrix_any_shape()) {
+            let t = Transformation::new(a.clone());
+            prop_assert_eq!(t.report(EPS).is_invertible, a.is_invertible(EPS));
+        }
+
+        // IMT 三位一體(題目驗收「方陣三個布林值總是一致」):方陣時
+        // 1-1 ⟺ onto ⟺ 可逆 —— rank = n 與 rank = m 在 n = m 時是同一句話,
+        // Summary Table 對方陣只有「全亮」與「全滅」兩種長相。
+        #[test]
+        fn square_report_is_all_or_nothing(a in int_matrix(3, 3)) {
+            let r = Transformation::new(a).report(EPS);
+            prop_assert_eq!(r.is_one_to_one, r.is_onto, "方陣:1-1 ⟺ onto");
+            prop_assert_eq!(r.is_onto, r.is_invertible, "方陣:onto ⟺ 可逆");
+        }
+
+        // 非方陣判死(題目驗收):換空間的映射永遠不可逆 —— 且「半套」
+        // 最多只有一半:1-1 與 onto 不可能同時亮(rank 搆不到兩端)。
+        #[test]
+        fn non_square_report_is_never_invertible(a in int_matrix_any_shape()) {
+            prop_assume!(a.rows() != a.cols());
+            let r = Transformation::new(a).report(EPS);
+            prop_assert!(!r.is_invertible, "非方陣不可逆");
+            prop_assert!(
+                !(r.is_one_to_one && r.is_onto),
+                "非方陣的 1-1 與 onto 不可能同時成立"
             );
         }
     }
