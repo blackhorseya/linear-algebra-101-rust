@@ -17,6 +17,7 @@ pub mod matrix;
 pub mod predicate_set;
 pub mod range;
 pub mod span;
+pub mod subspace;
 pub mod system;
 pub mod transformation;
 pub mod vector;
