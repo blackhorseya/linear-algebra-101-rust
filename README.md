@@ -37,6 +37,7 @@
 - [x] 子空間三公理 `contains_zero` / `closed_at`(掛在 `PredicateSet<Vector>`:0 ∈ W、加法 / 純量乘法封閉的**單點見證**檢查 —— 蘊涵語意,前提不成立空虛真;隨機抽樣是全稱命題的驗證,留給 proptest laws,抽樣只能反證不能證明(第一象限對 c < 0 不封閉,laws 整族全滅))
 - [x] 零空間成員判定 `null_space_contains`(Theorem 4.2:Null A = { v : Av = 0 } 是 ℝⁿ 的子空間 —— 成員判定只要「代入驗算」O(mn),與 `range_contains` 要「解方程」O(n³) 不對稱;laws:核植入法依建構產 Av = 0 的成員、Null A 包成 `PredicateSet` 過三公理機器,題目 1 與 2 合龍)
 - [x] 列空間生成集 `row_space_generators`(Row A = Col Aᵀ 是換句話說不是定理:Aᵀ 的行就是 A 的列 —— 列空間零成本繼承行空間機器;Col A 生成集與 Range = Col A 則**零新碼**:5-3 的 `range_generating_set` 與 law `image_is_always_reachable` 已收)
+- [x] 縮減定理 `reduce_to_basis`(Theorem 4.3:生成集 → 丟冗餘 → 基底,保留 pivot 行的**原始**向量(非 RREF 行,同 `range_basis` 陷阱);引擎 Span→`pivot_columns`,與既有 `range_basis` 是同一操作的一般版 —— 行空間基底就是「對 A 的行做縮減」的特例;維度權威沿用既有 `Span::dimension()` = rank,不另立型別;laws:Theorem 4.3 縮減後獨立 + span 不變 + 為子集、size = rank(Theorem 4.5 維度良定,且加冗餘生成元素不改維度=任兩基底等勢)、不丟 ⟺ 本來就獨立(題 1 基底⟺獨立)、Col A 基底三路對帳 `reduce_to_basis(行)` == `range_basis` ⊆ 原始行(題 2))
 
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`

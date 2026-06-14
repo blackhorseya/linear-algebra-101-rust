@@ -40,6 +40,52 @@ pub fn is_standard_basis(epsilon: f64, dim: usize, vectors: &[Vector]) -> bool {
     })
 }
 
+/// 縮減定理(Reduction Theorem,**Theorem 4.3**):把一個**生成集** S 蒸餾成
+/// 它所張成空間 Span(S) 的一組**基底** —— 丟掉冗餘(線性相依)的向量,留下一個
+/// 仍張出同一空間的極大獨立子集。
+///
+/// 這正是 [`is_basis`] 模組開頭預告的「下一步」:`is_basis` 只**驗證**一份清單
+/// 是不是基底,這支才真的從任意生成集**萃取**出基底。
+///
+/// **怎麼挑該留誰?** 把 S 的向量當矩陣 A 的**行**,化 RREF,留下 **pivot 行對應
+/// 的原始向量**。根據是行對應定理(Column Correspondence Theorem):列運算不改變
+/// **行之間**的線性關係 —— pivot 落在哪幾行,原矩陣的那幾支行就是獨立的,其餘行
+/// 都是它們的組合(可丟)。
+///
+/// **經典陷阱(同 [`range_basis`])**:回的是**原始 S 的向量**,不是 RREF 的行 ——
+/// RREF 的 pivot 行長得像 eᵢ,通常根本不在 Span(S) 裡。「保留原始向量」是測試釘死的。
+///
+/// 與既有積木的三角關係:
+/// - 與 [`removable_columns`](crate::removable_columns) **互補**:它回「該丟的」
+///   (自由行),這支回「該留的」(pivot 行)—— 同一刀的兩面,合起來是全部。
+/// - 與 [`range_basis`](crate::Transformation::range_basis) 是**同一操作的一般版**:
+///   `reduce_to_basis(A 的各行)` 把那些行排回矩陣恰好重建 A,於是與 `range_basis(A)`
+///   逐向量相等 —— 行空間基底只是「對 A 的行做縮減」這個特例(下方 law 對帳)。
+///
+/// 邊界:
+/// - **空集 → 空基底**:Span(∅) = {0},零子空間的基底是 ∅,維度 0(不需特判,
+///   `column_matrix` 對空集回 `None`)。
+/// - **含零向量 → 自動丟掉**:零行不貢獻 pivot,不會被選進來(不需特判)。
+///
+/// 結果**不唯一**(哪些算冗餘不唯一,見 [`redundancy_count`](crate::redundancy_count)
+/// 的例子),回消去法做的特定選擇;但其**大小恆等於** `Span::dimension()` = rank ——
+/// 這就是維度良定(**Theorem 4.5**:任兩基底等勢),由下方 law 釘住。
+///
+/// 實作提示:三個積木接線 ——
+/// 1. [`Span::new`](crate::Span)`(epsilon, s.clone())` 把向量擺成矩陣的行;
+/// 2. [`Span::column_matrix`](crate::Span::column_matrix) 取出那個矩陣
+///    (空集回 `None` → 回空 `Vec`),對它呼叫
+///    [`pivot_columns`](crate::Matrix::pivot_columns) 拿 pivot 索引;
+/// 3. pivot 索引 < `s.len()`(依建構),`s[j].clone()` 取**原始**向量 ——
+///    與 `range_basis` 同款的 map-collect。
+pub fn reduce_to_basis(epsilon: f64, s: Vec<Vector>) -> Vec<Vector> {
+    let span = Span::new(epsilon, s.clone());
+    let pivot_columns = span
+        .column_matrix()
+        .map_or(vec![], |m| m.pivot_columns(epsilon));
+    pivot_columns.into_iter().map(|j| s[j].clone()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +177,68 @@ mod tests {
             );
         }
     }
+
+    // ---- reduce_to_basis(Theorem 4.3 縮減定理)----
+
+    #[test]
+    fn reduce_to_basis_textbook_example() {
+        // 題目原例:三向量,中間那支是第一支的 2 倍(冗餘)→ 縮減成第一、三支。
+        // u₁=(1,2,-1)、u₂=2u₁=(2,4,-2)、u₃=(1,0,1)。pivot 落在第 0、2 行。
+        let u1 = v(vec![1.0, 2.0, -1.0]);
+        let u2 = v(vec![2.0, 4.0, -2.0]);
+        let u3 = v(vec![1.0, 0.0, 1.0]);
+        let basis = reduce_to_basis(BASIS_EPS, vec![u1.clone(), u2, u3.clone()]);
+        assert_eq!(basis.len(), 2, "rank 2 → 兩支基底");
+        assert!(basis[0].equals(&u1), "保留第一支 (1,2,-1)");
+        assert!(basis[1].equals(&u3), "保留第三支 (1,0,1)");
+    }
+
+    #[test]
+    fn reduce_to_basis_keeps_original_not_rref() {
+        // 經典陷阱:回的是原始向量,不是 RREF 的行。(1,2) 與 (3,6) 共線,rank 1,
+        // 縮減保留**原始的** (1,2),而非 RREF 化簡出的 e₀=(1,0)。
+        let basis = reduce_to_basis(BASIS_EPS, vec![v(vec![1.0, 2.0]), v(vec![3.0, 6.0])]);
+        assert_eq!(basis.len(), 1);
+        assert!(
+            basis[0].equals(&v(vec![1.0, 2.0])),
+            "保留原始 (1,2),不是 RREF 的 (1,0)"
+        );
+    }
+
+    #[test]
+    fn reduce_to_basis_independent_set_unchanged() {
+        // 已獨立 → 沒有冗餘可丟,原樣返回(題 1 的洞察:獨立集對自家 span 已是基底)。
+        let vectors = vec![v(vec![1.0, 0.0]), v(vec![1.0, 1.0])];
+        let basis = reduce_to_basis(BASIS_EPS, vectors.clone());
+        assert_eq!(basis.len(), 2, "獨立集一個都不丟");
+        assert!(basis[0].equals(&vectors[0]) && basis[1].equals(&vectors[1]));
+    }
+
+    #[test]
+    fn reduce_to_basis_empty_is_empty() {
+        // 邊界:Span(∅) = {0},零子空間的基底是 ∅(維度 0)。不 panic、不越界。
+        // (Vector 無 PartialEq —— 專案刻意只給 equals/approx_equals,故用 is_empty 斷言。)
+        assert!(reduce_to_basis(BASIS_EPS, vec![]).is_empty());
+    }
+
+    #[test]
+    fn reduce_to_basis_drops_zero_vector() {
+        // 零向量是冗餘的(零行不貢獻 pivot)→ 自動被丟掉,只留下非零的那支。
+        let basis = reduce_to_basis(BASIS_EPS, vec![v(vec![0.0, 0.0]), v(vec![1.0, 1.0])]);
+        assert_eq!(basis.len(), 1);
+        assert!(basis[0].equals(&v(vec![1.0, 1.0])));
+    }
+
+    #[test]
+    fn reduce_to_basis_all_parallel_keeps_one() {
+        // 全是 (1,1) 的倍數:rank 1 → 縮減成一支(消去法挑第一支 pivot)。
+        let basis = reduce_to_basis(
+            BASIS_EPS,
+            vec![v(vec![1.0, 1.0]), v(vec![2.0, 2.0]), v(vec![3.0, 3.0])],
+        );
+        assert_eq!(basis.len(), 1, "一條線 → 維度 1");
+        assert!(basis[0].equals(&v(vec![1.0, 1.0])));
+    }
 }
 
 /// Theorem 1.6 與 1.7 合流的 property test —— 把「基底 = 生成 ∧ 獨立」變成可執行的等價,
@@ -138,7 +246,7 @@ mod tests {
 #[cfg(test)]
 mod laws {
     use super::*;
-    use crate::Matrix;
+    use crate::{Matrix, Transformation};
     use proptest::prelude::*;
 
     /// 產生 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下精確)。
@@ -150,6 +258,12 @@ mod laws {
                     .collect(),
             )
         })
+    }
+
+    /// 產生長度 `n`、元素為 [-10, 10] 整數的向量(f64 下加減乘完全精確)。
+    fn int_vector(n: usize) -> impl Strategy<Value = Vector> {
+        prop::collection::vec(-10i64..=10, n)
+            .prop_map(|xs| Vector::from_vec(xs.into_iter().map(|x| x as f64).collect()))
     }
 
     proptest! {
@@ -192,6 +306,114 @@ mod laws {
                     "ℝ^dim 的基底必須恰有 dim 個向量,卻有 {} 個 (dim={})", columns.len(), rows
                 );
             }
+        }
+
+        /// Theorem 4.3(縮減定理):`reduce_to_basis(S)` 從任意生成集萃取出基底 ——
+        /// (1) 結果線性獨立、(2) span 與原集合相同、(3) 是原集合的子集(原始向量,非
+        /// RREF 行)。三條合起來就是「基底」的定義加上「萃取自 S」。與 independence 的
+        /// `removable_columns_leave_independent_spanning_set` 互為表裡:那條從「丟自由行」
+        /// 證,這條從「留 pivot 行」證,同一刀的兩面。
+        #[test]
+        fn reduce_to_basis_is_independent_subset_spanning_same(
+            s in (1usize..=4, 1usize..=5)
+                .prop_flat_map(|(rows, count)| prop::collection::vec(int_vector(rows), count)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let basis = reduce_to_basis(EPS, s.clone());
+            // (1) 獨立
+            prop_assert!(is_linearly_independent(EPS, &basis), "萃取的基底不獨立");
+            // (2) span 不變
+            prop_assert!(
+                Span::new(EPS, s.clone()).equals(&Span::new(EPS, basis.clone())),
+                "縮減改變了 span"
+            );
+            // (3) 每支基底都是 S 的某個原始向量
+            for b in &basis {
+                prop_assert!(s.iter().any(|u| u.equals(b)), "基底含非原始向量");
+            }
+        }
+
+        /// Theorem 4.5(維度良定)+ 題 4:萃取出的基底大小**恆等於** rank ——
+        /// 不管生成集多冗餘、消去法挑哪幾支,基底大小都釘死在 `Span::dimension()`(= rank)。
+        /// 這就是「維度與基底選擇無關」的可執行版本:維度權威是 rank,不必另立型別。
+        #[test]
+        fn reduce_to_basis_size_equals_dimension(
+            s in (1usize..=4, 1usize..=5)
+                .prop_flat_map(|(rows, count)| prop::collection::vec(int_vector(rows), count)),
+        ) {
+            const EPS: f64 = 1e-9;
+            prop_assert_eq!(
+                reduce_to_basis(EPS, s.clone()).len(),
+                Span::new(EPS, s).dimension(),
+                "基底大小 ≠ rank"
+            );
+        }
+
+        /// 題 1(基底 ⟺ 線性獨立):對自家 span,「S 是 Span(S) 的基底」⟺「S 獨立」——
+        /// 因為 spanning 對自家 span 恆真。可執行版本:縮減**一個都不丟**(len 不變)
+        /// ⟺ S 本來就線性獨立。把題 1 的洞察接到 reduce_to_basis 上,零新 API。
+        #[test]
+        fn reduce_to_basis_unchanged_iff_independent(
+            s in (1usize..=4, 1usize..=5)
+                .prop_flat_map(|(rows, count)| prop::collection::vec(int_vector(rows), count)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let unchanged = reduce_to_basis(EPS, s.clone()).len() == s.len();
+            prop_assert_eq!(unchanged, is_linearly_independent(EPS, &s), "不丟 ⟺ 獨立 破裂");
+        }
+
+        /// 題 2(Col A 基底,三路對帳):`reduce_to_basis(A 的各行)` 必須
+        /// (a) 與 [`range_basis`](Transformation::range_basis)`(A)` 逐向量相等(跑同一個
+        /// 重建出的 A,取同一組 pivot)、(b) 每支都是 A 的某**原始**行、(c) 大小 = rank。
+        /// 行空間基底只是「對 A 的行做縮減」的特例。
+        #[test]
+        fn col_space_basis_matches_range_basis(
+            a in (1usize..=4, 1usize..=4).prop_flat_map(|(r, c)| int_matrix(r, c)),
+        ) {
+            const EPS: f64 = 1e-9;
+            let columns: Vec<Vector> = (0..a.cols()).map(|j| a.column(j).unwrap()).collect();
+            let reduced = reduce_to_basis(EPS, columns.clone());
+            let range_basis = Transformation::new(a.clone()).range_basis(EPS);
+
+            // (a) 與 range_basis 逐向量相等
+            prop_assert_eq!(reduced.len(), range_basis.len(), "基底大小不一致");
+            for (r, rb) in reduced.iter().zip(&range_basis) {
+                prop_assert!(r.equals(rb), "reduce_to_basis(行) ≠ range_basis");
+            }
+            // (b) 每支都是 A 的原始行
+            for r in &reduced {
+                prop_assert!(columns.iter().any(|col| col.equals(r)), "基底含非原始行");
+            }
+            // (c) 大小 = rank
+            prop_assert_eq!(reduced.len(), a.rank(EPS), "Col A 基底大小 ≠ rank");
+        }
+
+        /// Theorem 4.5 強版:**同一個** span 的不同生成集,萃取出的基底**等勢**。
+        /// 構造法:S 與 S' = S ++ (S 的一個線性組合) span 相同(加進去的向量已在 Span(S)
+        /// 裡),故 reduce 後大小必相等 —— 把「任兩基底等勢」直接做成可跑的命題。
+        #[test]
+        fn dimension_invariant_under_adding_redundant_generator(
+            (s, weights) in (1usize..=4, 1usize..=4).prop_flat_map(|(rows, count)| {
+                (
+                    prop::collection::vec(int_vector(rows), count),
+                    prop::collection::vec(-3i64..=3, count),
+                )
+            }),
+        ) {
+            const EPS: f64 = 1e-9;
+            // redundant = Σ wᵢ·sᵢ,依建構落在 Span(S) 裡。
+            let weights_f: Vec<f64> = weights.iter().map(|&w| w as f64).collect();
+            let redundant = Vector::linear_combination(&weights_f, &s).unwrap();
+            let mut s_plus = s.clone();
+            s_plus.push(redundant);
+
+            // S 與 S' span 相同 → 維度相同。
+            prop_assert!(Span::new(EPS, s.clone()).equals(&Span::new(EPS, s_plus.clone())));
+            prop_assert_eq!(
+                reduce_to_basis(EPS, s).len(),
+                reduce_to_basis(EPS, s_plus).len(),
+                "加冗餘生成元素改變了維度"
+            );
         }
     }
 }
