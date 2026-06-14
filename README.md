@@ -39,6 +39,8 @@
 - [x] 列空間生成集 `row_space_generators`(Row A = Col Aᵀ 是換句話說不是定理:Aᵀ 的行就是 A 的列 —— 列空間零成本繼承行空間機器;Col A 生成集與 Range = Col A 則**零新碼**:5-3 的 `range_generating_set` 與 law `image_is_always_reachable` 已收)
 - [x] 縮減定理 `reduce_to_basis`(Theorem 4.3:生成集 → 丟冗餘 → 基底,保留 pivot 行的**原始**向量(非 RREF 行,同 `range_basis` 陷阱);引擎 Span→`pivot_columns`,與既有 `range_basis` 是同一操作的一般版 —— 行空間基底就是「對 A 的行做縮減」的特例;維度權威沿用既有 `Span::dimension()` = rank,不另立型別;laws:Theorem 4.3 縮減後獨立 + span 不變 + 為子集、size = rank(Theorem 4.5 維度良定,且加冗餘生成元素不改維度=任兩基底等勢)、不丟 ⟺ 本來就獨立(題 1 基底⟺獨立)、Col A 基底三路對帳 `reduce_to_basis(行)` == `range_basis` ⊆ 原始行(題 2))
 
+- [x] 零空間互動圖解:拖輸入 v 看它的像 Av 被壓向哪裡,落到核線上時 Av 塌進原點、v 變綠,可在 [web 視覺化](#視覺化)操作(`/range` 的**對偶** —— 輸入端壓扁 vs 輸出端覆蓋;v 是否在核裡由 core 的 `null_space_contains` 即時判定,nullity 與 rank 各自由 core 算、相加 = 2 當場驗證 rank-nullity 定理;核線方向由 transformPoint 掃描出「被壓最扁」的方向)
+
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`
 - [x] Gaussian elimination:`row_echelon_form` / `reduced_row_echelon_form`、秩 `rank`、零化度 `nullity`、pivot / free 行
@@ -104,7 +106,7 @@ cargo llvm-cov
 
 ## 視覺化
 
-`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)、「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)與「行列式」(拖 î′ / ĵ′ 看單位正方形的像的有號面積,3×3 / 4×4 推廣為(超)體積,det 路與 rank 路由 core 獨立計算、當場對帳 Theorem 3.4(a))的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)、「零空間與 rank-nullity」(`/range` 的對偶:拖輸入 v 看像 Av 被壓到核線、塌進原點,nullity + rank = 2 由 core 兩次獨立計算當場對帳)、「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)與「行列式」(拖 î′ / ĵ′ 看單位正方形的像的有號面積,3×3 / 4×4 推廣為(超)體積,det 路與 rank 路由 core 獨立計算、當場對帳 Theorem 3.4(a))的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
 
 WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
 

@@ -14,6 +14,7 @@ import { linearityOps, type LinearityOps } from "./linearity";
 import { multiplyOps, type MultiplyOps } from "./multiply";
 import { rangeOps, type RangeOps } from "./range";
 import { standardMatrixOps, type StandardMatrixOps } from "./standard-matrix";
+import { subspaceOps, type SubspaceOps } from "./subspace";
 import { transformOps, type TransformOps } from "./transform";
 
 // 各章的公開型別一律從本檔 re-export,呼叫端只認 '../lib/linalg' 一個路徑。
@@ -44,7 +45,8 @@ export interface Linalg
     LinearityOps,
     StandardMatrixOps,
     RangeOps,
-    CompositionOps {}
+    CompositionOps,
+    SubspaceOps {}
 
 // 模組層級 memoize:init 是非同步且只該跑一次。即使多個元件同時呼叫,
 // 也共用同一個 Promise(配合 Query 的 staleTime: Infinity 是雙重保險)。
@@ -64,6 +66,7 @@ export function loadLinalg(): Promise<Linalg> {
     ...standardMatrixOps,
     ...rangeOps,
     ...compositionOps,
+    ...subspaceOps,
   }));
   return instance;
 }

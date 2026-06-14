@@ -23,6 +23,7 @@ pub mod linearity;
 pub mod multiply;
 pub mod range;
 pub mod standard_matrix;
+pub mod subspace;
 pub mod transform;
 
 pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformation_report};
@@ -33,4 +34,5 @@ pub use linearity::{add_vectors, check_linearity, scale_vector};
 pub use multiply::{MultiplyExpansion, can_multiply, multiply_expand};
 pub use range::{is_onto, range_basis, range_contains, solve_for_input, unreachable_vector};
 pub use standard_matrix::{apply_rule, sample_standard_matrix};
+pub use subspace::{null_space_contains, nullity, rank};
 pub use transform::{are_parallel, transform_point};
