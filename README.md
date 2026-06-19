@@ -42,6 +42,7 @@
 - [x] 零空間互動圖解:拖輸入 v 看它的像 Av 被壓向哪裡,落到核線上時 Av 塌進原點、v 變綠,可在 [web 視覺化](#視覺化)操作(`/range` 的**對偶** —— 輸入端壓扁 vs 輸出端覆蓋;v 是否在核裡由 core 的 `null_space_contains` 即時判定,nullity 與 rank 各自由 core 算、相加 = 2 當場驗證 rank-nullity 定理;核線方向由 transformPoint 掃描出「被壓最扁」的方向)
 
 - [x] 擴展定理 `extend_to_basis`(Theorem 4.4:獨立集 li 補成基底 —— li 放最前接上 full_basis 後委派 `reduce_to_basis`,pivot 最左優先貪婪選 ⟹ li 獨立故全成 pivot 全保留、full_basis 只補新方向;與 `reduce_to_basis` 同引擎「往內縮 vs 往外補」;laws:Theorem 4.4(li 前綴保留 + 結果是 ℝⁿ 基底)、Theorem 4.6 鴿籠(>dim 必相依,題 2)、Theorem 4.7 捷徑(|S|=dim 時 LI⟺generating⟺rank,題 3)、子空間包含(V⊆W ⟹ dimV≤dimW、等維⟹V=W,題 4))
+- [x] 列空間基底 `row_space_basis`(Theorem 4.8:**RREF 的非零列**構成 Row A 的基底 —— 核心一課是**列空間被列運算保留(Row A = Row R)、行空間被破壞(Col A ≠ Col R)**:故列空間基底「就地讀 RREF 列」(canonical、唯一),行空間基底卻得「回頭抓原始行」(`range_basis` 陷阱);對照 `reduce_to_basis(各列)` 取原始列子集 —— 兩者皆 Row A 合法基底、大小都 = rank 但向量不同(一個子空間多組基底)。同單元維度定理皆**零新碼**走 laws:dim Col A = rank 三路對帳、dim Col A + dim Null A = n、`rank(A) = rank(Aᵀ)`(= dim Row A = dim Col A,題 4 又以兩支基底萃取器落實)、題 5 子空間包含維度單調沿用 6-4 既有 law)
 
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`

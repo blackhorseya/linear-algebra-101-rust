@@ -21,6 +21,13 @@
 //! 只補上 6-2 真正的新東西:公理本身的機器(掛在 [`PredicateSet<Vector>`]),
 //! 與輸入端的 Null A。
 //!
+//! **單元 7-1(講義 4.3)續寫此檔**:Row A 的**基底**(Theorem 4.8,
+//! [`row_space_basis`](Transformation::row_space_basis))—— 取 RREF 的非零列。
+//! 它與 6-2 的 [`row_space_generators`](Transformation::row_space_generators)
+//! 是「生成集 → 基底」的弧線,核心一課是列空間 / 行空間在列運算下的**不對稱**
+//! (見該方法 doc)。同單元的維度定理(dim Col A = rank、dim Null A = nullity、
+//! rank(A) = rank(Aᵀ)、V⊆W 維度單調)皆為既有積木,寫成下方 `mod laws` 的定理。
+//!
 //! 「集合」沿用 [`PredicateSet`]:子空間幾乎都是無限集,列舉不可能,
 //! 成員規則(述詞)是唯一能裝下它的容器 —— 筆記題目簽名裡的
 //! `F: Fn(&Vector) -> bool` 正是 `PredicateSet::new` 收掉的東西。
@@ -136,11 +143,52 @@ impl Transformation {
             .map(|i| Vector::from_vec(self.matrix().row(i).unwrap().to_vec()))
             .collect()
     }
+
+    /// Row space 的**基底**(**Theorem 4.8**):**RREF 的非零列**構成 Row A 的一組基底。
+    ///
+    /// 與 [`row_space_generators`](Transformation::row_space_generators) 是同一條
+    /// 「生成集合(可能冗餘)→ 蒸餾出基底」的弧線 —— 鏡像
+    /// [`range_generating_set`](Transformation::range_generating_set) →
+    /// [`range_basis`](Transformation::range_basis)。但**萃取方式天差地別**,
+    /// 而這個差別正是單元 7-1 的核心一課:
+    ///
+    /// > **列空間被列運算保留,行空間被列運算破壞。**
+    ///
+    /// - **Row A = Row R**(R 為 A 的 RREF):每個 ERO 都是可逆的列線性組合,
+    ///   不更動「列向量張成的空間」。所以 RREF 的非零列**就地**即為 Row A 的
+    ///   基底 —— 張同一個 Row A(空間沒變)、因 RREF 階梯結構天然獨立、個數恰為
+    ///   pivot 數 = rank。
+    /// - **對照 [`range_basis`](Transformation::range_basis)**:Col A ≠ Col R ——
+    ///   列運算把行向量搬到別處(RREF 的 pivot 行長得像 eᵢ,通常**不在** Col A 裡)。
+    ///   所以行空間基底**不能**讀 RREF 的行,得回頭抓**原始**的行。
+    ///
+    /// 同一台 RREF:**列空間就地讀、行空間回頭抓**。並排這兩支方法,不對稱一目了然。
+    ///
+    /// **canonical**:RREF 唯一(elimination 的 `rref_is_canonical` law),故這組
+    /// 基底**與輸入無關、唯一**;對照 [`reduce_to_basis`](crate::reduce_to_basis)
+    /// 回的是依輸入順序而定的原始向量子集 —— 兩者都是 Row A 的合法基底、大小都
+    /// = rank,但**向量不同**(下方 law 對帳「一個子空間有多組基底」)。
+    ///
+    /// 邊界:零矩陣 / 零轉換 → RREF 後全是零列,全被濾掉 → **空基底**
+    /// (Row A = {0},維度 0,不需特判)。
+    ///
+    /// 實作提示:
+    /// [`reduced_row_echelon_form`](crate::Matrix::reduced_row_echelon_form)`(epsilon)`
+    /// 取得 R,再走 [`row_space_generators`](Transformation::row_space_generators)
+    /// 同款的 `(0..rows).map(把第 i 列取成 Vector)`,差別只在資料來源換成 R、
+    /// 並 `filter` 掉零列([`Vector::is_approx_zero`]`(epsilon)` 吸收 RREF 的捨入殘差)。
+    pub fn row_space_basis(&self, epsilon: f64) -> Vec<Vector> {
+        let rref = self.matrix().reduced_row_echelon_form(epsilon);
+        (0..rref.rows())
+            .map(|i| Vector::from_vec(rref.row(i).unwrap().to_vec()))
+            .filter(|v| !v.is_approx_zero(epsilon))
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Matrix, PredicateSet, Transformation, Vector};
+    use crate::{Matrix, PredicateSet, Span, Transformation, Vector};
 
     const EPS: f64 = 1e-9;
 
@@ -278,13 +326,70 @@ mod tests {
         assert!(gens[1].equals(&Vector::from_vec(vec![2.0, 4.0])));
         assert!(gens[2].equals(&Vector::from_vec(vec![0.0, 0.0])));
     }
+
+    // ---- Row space 基底(單元 7-1,Theorem 4.8:RREF 非零列)----
+
+    #[test]
+    fn row_space_basis_takes_rref_nonzero_rows() {
+        // 第二列 = 2×第一列(冗餘)、第三列獨立 → rank 2。
+        // RREF = [[1,0,-1],[0,1,2],[0,0,0]],基底取前兩支非零列(canonical)。
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![2.0, 4.0, 6.0],
+            vec![1.0, 1.0, 1.0],
+        ]));
+        let basis = t.row_space_basis(EPS);
+        assert_eq!(basis.len(), 2, "rank 2:第二列冗餘被消成零列");
+        assert!(basis[0].approx_equals(&Vector::from_vec(vec![1.0, 0.0, -1.0]), EPS));
+        assert!(basis[1].approx_equals(&Vector::from_vec(vec![0.0, 1.0, 2.0]), EPS));
+    }
+
+    #[test]
+    fn row_space_basis_is_canonical_not_original_rows() {
+        // 與 range_basis 相反的經典對比:列空間基底回的是 **RREF 列**,不是原始列。
+        // A=[[2,4],[1,1]] 滿秩 → RREF = I₂,基底是 e₁、e₂ —— 原始列 (2,4)、(1,1)
+        // 一支都沒出現(對照 reduce_to_basis(各列) 會原樣保留 (2,4)、(1,1))。
+        let t = Transformation::new(Matrix::from_rows(vec![vec![2.0, 4.0], vec![1.0, 1.0]]));
+        let basis = t.row_space_basis(EPS);
+        assert_eq!(basis.len(), 2);
+        assert!(
+            basis[0].approx_equals(&Vector::standard(2, 0).unwrap(), EPS),
+            "RREF 列 e₁,非原始 (2,4)"
+        );
+        assert!(
+            basis[1].approx_equals(&Vector::standard(2, 1).unwrap(), EPS),
+            "RREF 列 e₂,非原始 (1,1)"
+        );
+    }
+
+    #[test]
+    fn row_space_basis_spans_same_as_generators() {
+        // Theorem 4.8 的本質 Row A = Row R:基底與原始列生成集張**同一個** Row A。
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![2.0, 4.0, 6.0],
+        ]));
+        let basis = Span::new(EPS, t.row_space_basis(EPS));
+        let gens = Span::new(EPS, t.row_space_generators());
+        assert!(basis.equals(&gens), "RREF 非零列與原始列張同一個 Row A");
+    }
+
+    #[test]
+    fn row_space_basis_of_zero_transformation_is_empty() {
+        // 零矩陣:RREF 全是零列 → 全被濾掉 → 空基底(Row A = {0},維度 0)。
+        let t = Transformation::new(Matrix::new(2, 3));
+        assert!(t.row_space_basis(EPS).is_empty());
+    }
 }
 
 /// 教材定理的隨機驗證(「for all」形式的代數律)—— 題目 1 要的「隨機抽樣
 /// 驗證器」本體在這裡:proptest 產樣本,公開 API 只做單點檢查。
 #[cfg(test)]
 mod laws {
-    use crate::{Matrix, PredicateSet, Transformation, Vector};
+    use crate::{
+        Matrix, PredicateSet, Span, Transformation, Vector, is_linearly_independent,
+        reduce_to_basis,
+    };
     use proptest::prelude::*;
 
     /// 判零門檻(整數輸入的運算完全精確,殘差為 0,遠低於此)。
@@ -451,6 +556,90 @@ mod laws {
             for (c, r) in cols.iter().zip(&rows_of_transpose) {
                 prop_assert!(c.equals(r));
             }
+        }
+
+        // ════════ 單元 7-1:與矩陣相關之子空間的維度(講義 4.3)════════
+        // 題 5(V⊆W ⟹ dim V ≤ dim W、等維 ⟹ V=W)已在 basis.rs 證畢
+        // (`subspace_inclusion_dim_monotone`,6-4),此處不重複(reuse 原則)。
+
+        // 題 1(dim Col A = rank):Col A 的維度三路一致 —— Span 幾何張成、rank
+        // pivot 計數、range_basis 大小,對同一個 A 給同一個數(零新 API,既有積木對帳)。
+        #[test]
+        fn col_space_dimension_three_ways_agree(a in int_matrix_any_shape()) {
+            let by_rank = a.rank(EPS);
+            let by_span = Span::from_columns(EPS, &a).dimension();
+            let by_basis = Transformation::new(a).range_basis(EPS).len();
+            prop_assert_eq!(by_rank, by_span, "Span 維度 ≠ rank");
+            prop_assert_eq!(by_span, by_basis, "range_basis 大小 ≠ rank");
+        }
+
+        // 題 2(rank-nullity 的子空間視角):dim Col A + dim Null A = n(行數)——
+        // 用 Span 算 Col A 維、Matrix::nullity 算 Null A 維,兩個獨立子空間的維度補成
+        // 全域 n。(elimination 的 rank_nullity_theorem 是 rank 算術版,這條走幾何維度。)
+        #[test]
+        fn col_and_null_dimension_sum_to_cols(a in int_matrix_any_shape()) {
+            let cols = a.cols();
+            let col_dim = Span::from_columns(EPS, &a).dimension();
+            let null_dim = a.nullity(EPS);
+            prop_assert_eq!(col_dim + null_dim, cols, "dim Col A + dim Null A ≠ n");
+        }
+
+        // 題 4(秩轉置不變 = dim Row A = dim Col A):rank(A) = rank(Aᵀ)。整章最深的
+        // 一條 —— 「列方向的獨立數」與「行方向的獨立數」其實是同一個數。兩個矩陣各自
+        // 獨立跑消去法,pivot 數必相等(零新 API)。
+        #[test]
+        fn rank_equals_rank_of_transpose(a in int_matrix_any_shape()) {
+            prop_assert_eq!(
+                a.rank(EPS),
+                a.transpose().rank(EPS),
+                "rank(A) ≠ rank(Aᵀ):dim Row A ≠ dim Col A\n a={:?}", a
+            );
+        }
+
+        // 題 4 的基底版(需 row_space_basis):dim Row A = dim Col A 用**兩支基底萃取器**
+        // 落實 —— Row A 的基底(RREF 列,住 ℝⁿ)與 Col A 的基底(原始行,住 ℝᵐ)是兩個
+        // 不同空間裡、用兩種相反方法取的基底,大小卻恆相等(= rank)。只比大小 → 1e-9。
+        #[test]
+        fn row_and_column_basis_have_equal_size(a in int_matrix_any_shape()) {
+            let row_basis = Transformation::new(a.clone()).row_space_basis(EPS);
+            let col_basis = Transformation::new(a).range_basis(EPS);
+            prop_assert_eq!(row_basis.len(), col_basis.len(), "dim Row A ≠ dim Col A");
+        }
+
+        // 題 3(Theorem 4.8,需 row_space_basis):RREF 非零列是 Row A 的 canonical 基底
+        // —— (1) 線性獨立、(2) 與原始列生成集張**同一個** Row A(Row A = Row R)、
+        // (3) 大小 = rank。三條合起來即「是基底 + 萃取自 Row A」。
+        // RREF 帶除法殘差,span 比對放寬到 1e-7(同 elimination 的 CANONICAL_EPSILON)。
+        #[test]
+        fn row_space_basis_is_canonical_basis_of_row_space(a in int_matrix_any_shape()) {
+            const EPS: f64 = 1e-7;
+            let t = Transformation::new(a.clone());
+            let basis = t.row_space_basis(EPS);
+            // (1) 獨立
+            prop_assert!(is_linearly_independent(EPS, &basis), "RREF 列基底不獨立");
+            // (2) Row A = Row R:與原始列張同一空間
+            prop_assert!(
+                Span::new(EPS, basis.clone()).equals(&Span::new(EPS, t.row_space_generators())),
+                "RREF 非零列與原始列不同 span(Row A = Row R 破功)"
+            );
+            // (3) 大小 = rank
+            prop_assert_eq!(basis.len(), a.rank(EPS), "Row A 基底大小 ≠ rank");
+        }
+
+        // 題 3 的「一個子空間有多組基底」(需 row_space_basis):RREF 列基底與
+        // reduce_to_basis(原始列)是 Row A 的**兩組不同**基底 —— 向量可不同,但必張
+        // 同一個 Row A、大小都 = rank。canonical(就地讀 RREF)vs 原始向量子集。
+        #[test]
+        fn row_space_basis_and_reduce_to_basis_span_same_row_space(a in int_matrix_any_shape()) {
+            const EPS: f64 = 1e-7;
+            let t = Transformation::new(a);
+            let canonical = t.row_space_basis(EPS);
+            let original = reduce_to_basis(EPS, t.row_space_generators());
+            prop_assert_eq!(canonical.len(), original.len(), "兩組基底大小不一");
+            prop_assert!(
+                Span::new(EPS, canonical).equals(&Span::new(EPS, original)),
+                "兩組基底不張同一個 Row A"
+            );
         }
     }
 }
