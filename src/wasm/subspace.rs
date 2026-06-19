@@ -16,7 +16,8 @@ use wasm_bindgen::prelude::*;
 /// 前端 v 箭頭「在核裡」的綠色由 core 當場判,不是 JS 寫死的條件。
 #[wasm_bindgen]
 pub fn null_space_contains(a: f64, b: f64, c: f64, d: f64, vx: f64, vy: f64) -> bool {
-    transformation_2x2(a, b, c, d).null_space_contains(&Vector::from_vec(vec![vx, vy]), TRACE_EPSILON)
+    transformation_2x2(a, b, c, d)
+        .null_space_contains(&Vector::from_vec(vec![vx, vy]), TRACE_EPSILON)
 }
 
 /// Null A 的維度(nullity):被壓到原點的**獨立輸入方向數**。
@@ -24,7 +25,9 @@ pub fn null_space_contains(a: f64, b: f64, c: f64, d: f64, vx: f64, vy: f64) -> 
 /// 2 → 整個 domain 都被壓扁(A = 0)。委派 `Matrix::nullity`。
 #[wasm_bindgen]
 pub fn nullity(a: f64, b: f64, c: f64, d: f64) -> usize {
-    transformation_2x2(a, b, c, d).matrix().nullity(TRACE_EPSILON)
+    transformation_2x2(a, b, c, d)
+        .matrix()
+        .nullity(TRACE_EPSILON)
 }
 
 /// Col A 的維度(rank)。與 [`nullity`] 滿足 rank-nullity 定理:**rank + nullity
@@ -52,7 +55,11 @@ mod tests {
     fn rank_plus_nullity_is_domain_dim() {
         for m in [FULL_RANK, RANK_ONE, PROJECTION, ZERO] {
             let [a, b, c, d] = m;
-            assert_eq!(rank(a, b, c, d) + nullity(a, b, c, d), 2, "rank-nullity 破裂");
+            assert_eq!(
+                rank(a, b, c, d) + nullity(a, b, c, d),
+                2,
+                "rank-nullity 破裂"
+            );
         }
     }
 
@@ -61,7 +68,10 @@ mod tests {
     fn null_space_contains_classifies_projection_kernel() {
         let [a, b, c, d] = PROJECTION;
         assert!(null_space_contains(a, b, c, d, 0.0, 1.0), "y 軸被壓到原點");
-        assert!(!null_space_contains(a, b, c, d, 1.0, 0.0), "x 軸保留,不在核裡");
+        assert!(
+            !null_space_contains(a, b, c, d, 1.0, 0.0),
+            "x 軸保留,不在核裡"
+        );
         assert_eq!(nullity(a, b, c, d), 1, "投影核是一條線");
     }
 
@@ -88,7 +98,10 @@ mod tests {
         let [a, b, c, d] = FULL_RANK;
         assert_eq!(nullity(a, b, c, d), 0);
         assert!(null_space_contains(a, b, c, d, 0.0, 0.0), "0 永遠在核裡");
-        assert!(!null_space_contains(a, b, c, d, 1.0, 1.0), "可逆不壓扁非零向量");
+        assert!(
+            !null_space_contains(a, b, c, d, 1.0, 1.0),
+            "可逆不壓扁非零向量"
+        );
     }
 
     /// 零矩陣 → 整個平面都是核(nullity 2):任何 v 都被壓到原點。
