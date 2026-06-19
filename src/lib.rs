@@ -24,7 +24,7 @@ pub mod vector;
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
-pub use basis::{is_basis, is_standard_basis, reduce_to_basis};
+pub use basis::{extend_to_basis, is_basis, is_standard_basis, reduce_to_basis};
 pub use composition::TransformationReport;
 pub use coordinates::{coordinates, from_coordinates};
 pub use diagonal::DiagonalMatrix;

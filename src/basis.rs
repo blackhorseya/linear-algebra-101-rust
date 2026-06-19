@@ -86,6 +86,39 @@ pub fn reduce_to_basis(epsilon: f64, s: Vec<Vector>) -> Vec<Vector> {
     pivot_columns.into_iter().map(|j| s[j].clone()).collect()
 }
 
+/// 擴展定理(Extension Theorem,**Theorem 4.4**):把子空間 V 的一個**線性獨立集**
+/// `li` 擴展成 V 的一組**基底** —— li 全部保留,再從 `full_basis`(V 的生成集,
+/// 常用整個空間的標準基底)補上 li 還缺的方向。
+///
+/// 與 [`reduce_to_basis`] **同一台引擎,只是換個餵法**:把 li 排在最前、full_basis
+/// 接在後面,整串丟給 reduce_to_basis。因為 pivot 是**最左優先**貪婪選的
+/// (見 [`pivot_columns`](crate::Matrix::pivot_columns):REF 逐列取、索引遞增),
+/// 而 li 線性獨立 ⟹ li 的每一行在最左都自成 pivot ⟹ **li 完整保留(連順序)**;
+/// 接著 full_basis 只補進 li 尚未張到的新方向,已被涵蓋的(冗餘)行被丟掉。
+///
+/// `reduce_to_basis` 是「往**內**縮」(從生成集刪冗餘)、`extend_to_basis` 是「往**外**
+/// 補」(把獨立集補成基底)—— 同一個 pivot 提取,差別只在你把已知的獨立集放最左,
+/// 讓貪婪選擇優先吃它。
+///
+/// **前提**:`li` 必須線性獨立(呼叫端保證,Theorem 4.4 的假設)。若 li 其實相依,
+/// reduce 會丟掉一些 li 向量 —— 結果仍是合法基底,但不再「保留 li 全部」,失去擴展
+/// 的語意。
+///
+/// 邊界:
+/// - `li` 空 → 退化成 [`reduce_to_basis`]`(full_basis)`(從零擴展 = 純萃取)。
+/// - `full_basis` 空(或不夠張滿)→ 結果就是 li 能張到的範圍(li 獨立時即 li 本身)。
+///
+/// 結果是 Span(li ∪ full_basis) 的基底;當 full_basis 張滿目標空間 V 時,結果即
+/// **含 li 的 V 基底**,大小 = dim V(Theorem 4.5 維度良定)。
+///
+/// 實作提示:把 `li` 與 `full_basis` 接成一個 `Vec`(**li 在前!順序決定保留誰**),
+/// 委派 [`reduce_to_basis`] —— 一個 concat 加一次轉呼叫,擴展定理就寫進依賴關係裡。
+pub fn extend_to_basis(epsilon: f64, li: Vec<Vector>, full_basis: Vec<Vector>) -> Vec<Vector> {
+    let mut combined = li.clone();
+    combined.extend(full_basis);
+    reduce_to_basis(epsilon, combined)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +272,77 @@ mod tests {
         assert_eq!(basis.len(), 1, "一條線 → 維度 1");
         assert!(basis[0].equals(&v(vec![1.0, 1.0])));
     }
+
+    // ---- extend_to_basis(Theorem 4.4 擴展定理)----
+
+    #[test]
+    fn extend_to_basis_textbook_example() {
+        // li = {(1,1,1)} 是 ℝ³ 的獨立集,用標準基底擴展成 ℝ³ 的基底:
+        // (1,1,1) 保留在最前,再補兩支標準向量補足 3 維。
+        let li = vec![v(vec![1.0, 1.0, 1.0])];
+        let full = vec![
+            v(vec![1.0, 0.0, 0.0]),
+            v(vec![0.0, 1.0, 0.0]),
+            v(vec![0.0, 0.0, 1.0]),
+        ];
+        let basis = extend_to_basis(BASIS_EPS, li, full);
+        assert_eq!(basis.len(), 3, "ℝ³ 的基底有 3 支");
+        assert!(basis[0].equals(&v(vec![1.0, 1.0, 1.0])), "li 保留在最前");
+        assert!(is_basis(BASIS_EPS, 3, &basis), "結果是 ℝ³ 的基底");
+    }
+
+    #[test]
+    fn extend_to_basis_preserves_li_prefix() {
+        // li 的兩支獨立向量都保留在結果最前(順序不變),補足成 ℝ³ 基底。
+        let li = vec![v(vec![1.0, 1.0, 0.0]), v(vec![0.0, 1.0, 1.0])];
+        let full = vec![
+            v(vec![1.0, 0.0, 0.0]),
+            v(vec![0.0, 1.0, 0.0]),
+            v(vec![0.0, 0.0, 1.0]),
+        ];
+        let basis = extend_to_basis(BASIS_EPS, li.clone(), full);
+        assert_eq!(basis.len(), 3);
+        assert!(
+            basis[0].equals(&li[0]) && basis[1].equals(&li[1]),
+            "li 前綴保留"
+        );
+    }
+
+    #[test]
+    fn extend_to_basis_empty_li_is_reduce() {
+        // li 空 → 退化成純萃取 reduce_to_basis(full)。
+        let full = vec![v(vec![1.0, 0.0]), v(vec![2.0, 0.0]), v(vec![0.0, 1.0])];
+        let extended = extend_to_basis(BASIS_EPS, vec![], full.clone());
+        let reduced = reduce_to_basis(BASIS_EPS, full);
+        assert_eq!(extended.len(), reduced.len());
+        for (e, r) in extended.iter().zip(&reduced) {
+            assert!(e.equals(r), "空 li 擴展應等於純縮減");
+        }
+    }
+
+    #[test]
+    fn extend_to_basis_already_full_drops_redundant() {
+        // li 已是 ℝ² 的基底 → full_basis 全是冗餘,一支都補不進來。
+        let li = vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])];
+        let full = vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])];
+        let basis = extend_to_basis(BASIS_EPS, li.clone(), full);
+        assert_eq!(basis.len(), 2, "已滿,不補");
+        assert!(basis[0].equals(&li[0]) && basis[1].equals(&li[1]));
+    }
+
+    // ---- 題 4:子空間包含性質(確定性案例,補強 law 的等維分支)----
+
+    #[test]
+    fn equal_dim_inclusion_means_equal() {
+        // V ⊆ W 且 dim V = dim W ⟹ V = W:另一組 ℝ² 基底與標準 ℝ² 等維且相等;
+        // 真子空間(x 軸)則維度嚴格更小。
+        let w = Span::new(BASIS_EPS, vec![v(vec![1.0, 0.0]), v(vec![0.0, 1.0])]); // ℝ²
+        let v_full = Span::new(BASIS_EPS, vec![v(vec![1.0, 1.0]), v(vec![1.0, -1.0])]); // 另組 ℝ² 基底
+        let v_proper = Span::new(BASIS_EPS, vec![v(vec![1.0, 0.0])]); // x 軸(真子空間)
+        assert_eq!(v_full.dimension(), w.dimension(), "都是 ℝ²,等維");
+        assert!(v_full.equals(&w), "等維包含 ⟹ 相等");
+        assert!(v_proper.dimension() < w.dimension(), "真子空間維度嚴格更小");
+    }
 }
 
 /// Theorem 1.6 與 1.7 合流的 property test —— 把「基底 = 生成 ∧ 獨立」變成可執行的等價,
@@ -246,7 +350,7 @@ mod tests {
 #[cfg(test)]
 mod laws {
     use super::*;
-    use crate::{Matrix, Transformation};
+    use crate::{Matrix, Transformation, is_linearly_dependent};
     use proptest::prelude::*;
 
     /// 產生 `rows×cols`、元素為 [-10, 10] 整數的矩陣(f64 下精確)。
@@ -414,6 +518,102 @@ mod laws {
                 reduce_to_basis(EPS, s_plus).len(),
                 "加冗餘生成元素改變了維度"
             );
+        }
+
+        /// Theorem 4.4(擴展定理):把獨立集 li 用 ℝⁿ 標準基底擴展 —— (1) li 完整保留
+        /// 在最前(連順序)、(2) 結果線性獨立、(3) 結果是 ℝⁿ 的基底(張滿且大小 = n)。
+        /// li 由 reduce_to_basis(隨機向量) 取得(必獨立),標準基底保證 full_basis 張滿 ℝⁿ。
+        #[test]
+        fn extension_theorem_preserves_and_completes(
+            (n, raw) in (1usize..=4)
+                .prop_flat_map(|n| (Just(n), prop::collection::vec(int_vector(n), 1..=5))),
+        ) {
+            const EPS: f64 = 1e-9;
+            let li = reduce_to_basis(EPS, raw); // 必線性獨立
+            let standard: Vec<Vector> = (0..n).map(|i| Vector::standard(n, i).unwrap()).collect();
+            let extended = extend_to_basis(EPS, li.clone(), standard);
+
+            // (1) li 完整保留在最前(順序不變)
+            prop_assert!(li.len() <= extended.len());
+            for (i, u) in li.iter().enumerate() {
+                prop_assert!(extended[i].equals(u), "li 前綴沒保留");
+            }
+            // (2) 結果線性獨立
+            prop_assert!(is_linearly_independent(EPS, &extended), "擴展結果不獨立");
+            // (3) 結果是 ℝⁿ 的基底
+            prop_assert!(is_basis(EPS, n, &extended), "擴展沒補成 ℝⁿ 基底");
+            prop_assert_eq!(extended.len(), n, "ℝⁿ 基底必有 n 支");
+        }
+
+        /// Theorem 4.6(題 2:維度上界):ℝᵏ 中任何 > k 個向量的集合**必相依** —— 鴿籠
+        /// 原理。產 k + extra(≥1)個 ℝᵏ 向量,is_linearly_dependent 必為真;光憑「個數
+        /// > 維度」就保證相依,不必看向量內容。
+        #[test]
+        fn more_than_dim_vectors_are_dependent(
+            (k, set) in (1usize..=4, 1usize..=3).prop_flat_map(|(k, extra)| {
+                (Just(k), prop::collection::vec(int_vector(k), k + extra))
+            }),
+        ) {
+            const EPS: f64 = 1e-9;
+            prop_assert!(set.len() > k); // 依建構
+            prop_assert!(
+                is_linearly_dependent(EPS, &set),
+                "{} 個 ℝ^{} 向量竟然獨立(> 維度必相依)", set.len(), k
+            );
+        }
+
+        /// Theorem 4.7(題 3:基底捷徑):ℝᵏ 中當 |S| = k 時,「線性獨立」⟺「是基底」
+        /// ⟺ rank = k —— 數量對的前提下,獨立與生成互為充要,只需查一個。三條獨立路徑
+        /// (is_linearly_independent / is_basis(spanning ∧ independent)/ Span::dimension)
+        /// 必須回報同一真值。
+        #[test]
+        fn basis_shortcut_when_count_equals_dim(
+            (k, s) in (1usize..=4)
+                .prop_flat_map(|k| (Just(k), prop::collection::vec(int_vector(k), k))),
+        ) {
+            const EPS: f64 = 1e-9;
+            prop_assert_eq!(s.len(), k); // 依建構:|S| = k
+            let independent = is_linearly_independent(EPS, &s);
+            let is_a_basis = is_basis(EPS, k, &s);
+            let full_rank = Span::new(EPS, s.clone()).dimension() == k;
+            prop_assert!(
+                independent == is_a_basis && is_a_basis == full_rank,
+                "Theorem 4.7 捷徑破裂:LI={independent} basis={is_a_basis} rank=k:{full_rank}"
+            );
+        }
+
+        /// 題 4(子空間包含性質):V ⊆ W ⟹ dim V ≤ dim W;且 V ⊆ W 且等維 ⟹ V = W。
+        /// 構造 V ⊆ W:V 的每個生成元素都是 W 生成元素的線性組合(依建構落在 Span(W) 裡)。
+        #[test]
+        fn subspace_inclusion_dim_monotone(
+            (w_gens, weights) in (1usize..=4, 1usize..=4, 1usize..=4)
+                .prop_flat_map(|(rows, w_count, v_count)| {
+                    (
+                        prop::collection::vec(int_vector(rows), w_count),
+                        prop::collection::vec(prop::collection::vec(-3i64..=3, w_count), v_count),
+                    )
+                }),
+        ) {
+            const EPS: f64 = 1e-9;
+            // V 的每個生成元素 = W 生成元素的線性組合 → V ⊆ W
+            let v_gens: Vec<Vector> = weights
+                .iter()
+                .map(|row| {
+                    let ws: Vec<f64> = row.iter().map(|&x| x as f64).collect();
+                    Vector::linear_combination(&ws, &w_gens).unwrap()
+                })
+                .collect();
+            let v = Span::new(EPS, v_gens.clone());
+            let w = Span::new(EPS, w_gens.clone());
+
+            // V ⊆ W(依建構,也驗一遍)
+            prop_assert!(v_gens.iter().all(|x| w.contains(x)), "V ⊄ W?建構錯");
+            // dim V ≤ dim W
+            prop_assert!(v.dimension() <= w.dimension(), "包含卻維度更大");
+            // 等維 ⟹ V = W
+            if v.dimension() == w.dimension() {
+                prop_assert!(v.equals(&w), "等維包含卻不相等");
+            }
         }
     }
 }
