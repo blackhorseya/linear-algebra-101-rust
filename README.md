@@ -48,6 +48,7 @@
 - [x] 座標系統 Coordinate Systems(單元 7-2,講義 4.4):**零新碼** —— 既有 `coordinates` / `from_coordinates` 雙射(向量空間章收尾)就是這章的全部計算,只把定理對著它演成 laws / example:Theorem 4.10(唯一表示)即 `coordinates` 回 `Unique` 的型別保證(uniqueness 那半再以「植入權重必被還原」law 補上 `coordinates ∘ from_coordinates = id`,與既有 round-trip 互為反向合成);**Theorem 4.11**(方陣基底閉式)以 law `coordinates_equals_inverse_times_vector` 把「解 RREF」與「乘 B⁻¹」兩條獨立路徑當場對帳、接回可逆矩陣章;標準基底 = identity 座標映射(`[x]_E = x`);正交(旋轉)基底是剛體運動、保長度 `‖[x]_B‖ = ‖x‖`(45° 具體案例 + 任意角度 law)
 
 - [x] 座標系統互動圖解:斜格點陣 + 平行四邊形分解,拖基底 b₁ / b₂「換尺」、拖點 x,看同一個點在不同基底下的座標 `[x]_B = (c₁, c₂)` 即時變化(座標 = 沿 b₁、b₂ 各走幾步的權重),可在 [web 視覺化](#視覺化)操作(`[x]_B` 由 core 的 `coordinates` 解、白圈由 `from_coordinates` 重建套住 x 當場驗雙射;b₁ ∥ b₂ 退化時 core 回空、標為「非基底、座標未定義」)
+- [x] 線性運算子的矩陣表示(單元 7-3,講義 4.5):`b_matrix`(T 相對於基底 B 的矩陣 `[T]_B`,各 column = `[T(bᵢ)]_B` —— 把座標章 `coordinates` 接在轉換章 `apply` 之後)、`reconstruct_standard_matrix`(由基底影像反求標準矩陣 `A = M·B⁻¹`,運算子由基底影像唯一決定)。只新增這兩個函式,定理全走 laws:**Theorem 4.12** `[T]_B = B⁻¹AB`(定義路徑 vs 閉式路徑對帳 —— 故 `[T]_B` 與 A **相似**)、相似對稱(`B = P⁻¹AP ⟹ A = PBP⁻¹`,純既有運算、stub 階段即綠)、**Theorem 7.10** 映射性質 `[T(v)]_B = [T]_B·[v]_B`(抽象空間的線性運算 = 座標向量 + 矩陣乘法)、標準基底時 `reconstruct` 退回既有 `standard_matrix`(接回轉換章)
 
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`

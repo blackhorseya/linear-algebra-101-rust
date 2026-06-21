@@ -14,6 +14,7 @@ pub mod error;
 pub mod independence;
 pub mod inverse;
 pub mod matrix;
+pub mod operator;
 pub mod predicate_set;
 pub mod range;
 pub mod span;
@@ -33,6 +34,7 @@ pub use independence::{
     is_linearly_dependent, is_linearly_independent, redundancy_count, removable_columns,
 };
 pub use matrix::Matrix;
+pub use operator::{b_matrix, reconstruct_standard_matrix};
 pub use predicate_set::PredicateSet;
 pub use span::{Span, affine_span, on_line, on_plane};
 pub use system::{RowKind, Solution, System};
