@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransformRouteImport } from './routes/transform'
 import { Route as StandardMatrixRouteImport } from './routes/standard-matrix'
 import { Route as SpanRouteImport } from './routes/span'
+import { Route as RankRouteImport } from './routes/rank'
 import { Route as RangeRouteImport } from './routes/range'
 import { Route as NullspaceRouteImport } from './routes/nullspace'
 import { Route as MultiplyRouteImport } from './routes/multiply'
@@ -35,6 +36,11 @@ const StandardMatrixRoute = StandardMatrixRouteImport.update({
 const SpanRoute = SpanRouteImport.update({
   id: '/span',
   path: '/span',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RankRoute = RankRouteImport.update({
+  id: '/rank',
+  path: '/rank',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RangeRoute = RangeRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
   '/range': typeof RangeRoute
+  '/rank': typeof RankRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByTo {
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
   '/range': typeof RangeRoute
+  '/rank': typeof RankRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
   '/range': typeof RangeRoute
+  '/rank': typeof RankRoute
   '/span': typeof SpanRoute
   '/standard-matrix': typeof StandardMatrixRoute
   '/transform': typeof TransformRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
     | '/multiply'
     | '/nullspace'
     | '/range'
+    | '/rank'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/multiply'
     | '/nullspace'
     | '/range'
+    | '/rank'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/multiply'
     | '/nullspace'
     | '/range'
+    | '/rank'
     | '/span'
     | '/standard-matrix'
     | '/transform'
@@ -181,6 +193,7 @@ export interface RootRouteChildren {
   MultiplyRoute: typeof MultiplyRoute
   NullspaceRoute: typeof NullspaceRoute
   RangeRoute: typeof RangeRoute
+  RankRoute: typeof RankRoute
   SpanRoute: typeof SpanRoute
   StandardMatrixRoute: typeof StandardMatrixRoute
   TransformRoute: typeof TransformRoute
@@ -207,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/span'
       fullPath: '/span'
       preLoaderRoute: typeof SpanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rank': {
+      id: '/rank'
+      path: '/rank'
+      fullPath: '/rank'
+      preLoaderRoute: typeof RankRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/range': {
@@ -285,6 +305,7 @@ const rootRouteChildren: RootRouteChildren = {
   MultiplyRoute: MultiplyRoute,
   NullspaceRoute: NullspaceRoute,
   RangeRoute: RangeRoute,
+  RankRoute: RankRoute,
   SpanRoute: SpanRoute,
   StandardMatrixRoute: StandardMatrixRoute,
   TransformRoute: TransformRoute,

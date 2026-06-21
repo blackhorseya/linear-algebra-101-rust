@@ -38,6 +38,32 @@ pub fn rank(a: f64, b: f64, c: f64, d: f64) -> usize {
     transformation_2x2(a, b, c, d).matrix().rank(TRACE_EPSILON)
 }
 
+/// Row A 的基底(core 的 `row_space_basis`,Theorem 4.8:**RREF 的非零列**),
+/// 列向量攤平串接:`[]`(rank 0:Row A = {0})、`[x, y]`(rank 1:Row A 是直線)、
+/// `[x₁, y₁, x₂, y₂]`(rank 2:Row A = ℝ²)—— 支數 = dim Row A。與 range 章的
+/// `range_basis`(Col A 基底)**對偶**:給 `/rank` 頁並排畫「domain 的 Row A」
+/// 與「codomain 的 Col A」。回的是 **RREF 列**(canonical),非原始列。
+#[wasm_bindgen]
+pub fn row_space_basis(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
+    transformation_2x2(a, b, c, d)
+        .row_space_basis(TRACE_EPSILON)
+        .iter()
+        .flat_map(|v| v.entries().iter().copied())
+        .collect()
+}
+
+/// dim Row A,經 **rank(Aᵀ)** 獨立算出(轉置後數 pivot)。與 [`rank`](rank)
+/// (= rank(A) = dim Col A)**恆相等** —— 這就是 `rank(A) = rank(Aᵀ)`
+/// (= dim Row A = dim Col A,整章最深的定理)。前端把這兩個**獨立計算**的數
+/// 並列,當場對帳(不是前端湊的)。
+#[wasm_bindgen]
+pub fn rank_transpose(a: f64, b: f64, c: f64, d: f64) -> usize {
+    transformation_2x2(a, b, c, d)
+        .matrix()
+        .transpose()
+        .rank(TRACE_EPSILON)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +137,36 @@ mod tests {
         assert_eq!(nullity(a, b, c, d), 2);
         for (vx, vy) in [(1.0, 0.0), (0.0, 1.0), (3.0, -5.0)] {
             assert!(null_space_contains(a, b, c, d, vx, vy), "零矩陣壓扁一切");
+        }
+    }
+
+    /// row_space_basis 的攤平長度說完 dim Row A:4(ℝ²)、2(直線)、0(原點);
+    /// rank 1 取的是 **RREF 非零列**(canonical),非原始列。
+    #[test]
+    fn row_space_basis_length_encodes_row_dimension() {
+        let [a, b, c, d] = FULL_RANK;
+        assert_eq!(row_space_basis(a, b, c, d).len(), 4, "rank 2:Row A = ℝ²");
+        let [a, b, c, d] = RANK_ONE; // [1,2,2,4] → RREF 非零列 (1,2)
+        assert_eq!(
+            row_space_basis(a, b, c, d),
+            vec![1.0, 2.0],
+            "rank 1:RREF 列"
+        );
+        let [a, b, c, d] = ZERO;
+        assert!(row_space_basis(a, b, c, d).is_empty(), "rank 0:空基底");
+    }
+
+    /// rank(A) = rank(Aᵀ) = dim Row A = dim Col A:四種秩全中 —— 前端「兩個獨立
+    /// 計算對帳」的數學保證(整章最深的定理,binding 端再釘一次)。
+    #[test]
+    fn rank_transpose_always_equals_rank() {
+        for m in [FULL_RANK, RANK_ONE, PROJECTION, ZERO] {
+            let [a, b, c, d] = m;
+            assert_eq!(
+                rank_transpose(a, b, c, d),
+                rank(a, b, c, d),
+                "rank(A) ≠ rank(Aᵀ)"
+            );
         }
     }
 }

@@ -34,5 +34,5 @@ pub use linearity::{add_vectors, check_linearity, scale_vector};
 pub use multiply::{MultiplyExpansion, can_multiply, multiply_expand};
 pub use range::{is_onto, range_basis, range_contains, solve_for_input, unreachable_vector};
 pub use standard_matrix::{apply_rule, sample_standard_matrix};
-pub use subspace::{null_space_contains, nullity, rank};
+pub use subspace::{null_space_contains, nullity, rank, rank_transpose, row_space_basis};
 pub use transform::{are_parallel, transform_point};

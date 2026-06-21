@@ -35,6 +35,11 @@ const FEATURES = [
     desc: '/range 的對偶:拖輸入 v 看它的像 Av,落到核線上時被壓到原點;nullity 與 rank 各自由 core 算,相加 = 2 當場驗證 rank-nullity 定理。',
   },
   {
+    to: '/rank',
+    title: '行秩 = 列秩',
+    desc: 'Row A(domain)與 Col A(codomain)是不同空間的不同子空間,維度卻永遠相等。拖列向量或行向量,看兩邊的維度同進同退 —— rank(A) = rank(Aᵀ) 看得見。',
+  },
+  {
     to: '/composition',
     title: '合成與可逆性',
     desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',
