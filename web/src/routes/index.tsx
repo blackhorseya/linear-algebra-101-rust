@@ -40,6 +40,11 @@ const FEATURES = [
     desc: 'Row A(domain)與 Col A(codomain)是不同空間的不同子空間,維度卻永遠相等。拖列向量或行向量,看兩邊的維度同進同退 —— rank(A) = rank(Aᵀ) 看得見。',
   },
   {
+    to: '/coordinates',
+    title: '座標系統',
+    desc: '同一個點,換一組基底就有不同座標。拖斜格的 b₁、b₂ 換尺、拖 x 移點,看 [x]_B = (c₁, c₂) 即時變化 —— 座標是「沿 b₁、b₂ 各走幾步」的權重,由 core 解 B⁻¹x。',
+  },
+  {
     to: '/composition',
     title: '合成與可逆性',
     desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',

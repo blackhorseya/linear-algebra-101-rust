@@ -7,6 +7,7 @@ import init from "../wasm/linear_algebra_101.js";
 import wasmUrl from "../wasm/linear_algebra_101_bg.wasm?url";
 
 import { compositionOps, type CompositionOps } from "./composition";
+import { coordinatesOps, type CoordinatesOps } from "./coordinates";
 import { determinantOps, type DeterminantOps } from "./determinant";
 import { eliminationOps, type EliminationOps } from "./elimination";
 import { inverseOps, type InverseOps } from "./inverse";
@@ -46,7 +47,8 @@ export interface Linalg
     StandardMatrixOps,
     RangeOps,
     CompositionOps,
-    SubspaceOps {}
+    SubspaceOps,
+    CoordinatesOps {}
 
 // 模組層級 memoize:init 是非同步且只該跑一次。即使多個元件同時呼叫,
 // 也共用同一個 Promise(配合 Query 的 staleTime: Infinity 是雙重保險)。
@@ -67,6 +69,7 @@ export function loadLinalg(): Promise<Linalg> {
     ...rangeOps,
     ...compositionOps,
     ...subspaceOps,
+    ...coordinatesOps,
   }));
   return instance;
 }

@@ -16,6 +16,7 @@
 mod helpers;
 
 pub mod composition;
+pub mod coordinates;
 pub mod determinant;
 pub mod elimination;
 pub mod inverse;
@@ -27,6 +28,7 @@ pub mod subspace;
 pub mod transform;
 
 pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformation_report};
+pub use coordinates::{coordinates_2d, from_coordinates_2d};
 pub use determinant::{determinant, is_invertible};
 pub use elimination::{EliminationTrace, eliminate};
 pub use inverse::{InverseTrace, invert_trace};

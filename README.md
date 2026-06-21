@@ -47,6 +47,8 @@
 - [x] 行秩 = 列秩互動圖解:雙面板並排,domain 畫 Row A(拖列向量)、codomain 畫 Col A(拖行向量),把秩拉到 1 時兩條線同時出現(方向還不同)、拉回 2 時兩面同時鋪滿 —— 維度永遠鎖在一起,可在 [web 視覺化](#視覺化)操作(dim Row A 經 `rank(Aᵀ)`、dim Col A 經 `rank(A)` 由 core 兩次獨立計算當場對帳 `rank(A) = rank(Aᵀ)`;兩組基底由 `row_space_basis`(RREF 列)與 `range_basis`(原始行)分別取出)
 - [x] 座標系統 Coordinate Systems(單元 7-2,講義 4.4):**零新碼** —— 既有 `coordinates` / `from_coordinates` 雙射(向量空間章收尾)就是這章的全部計算,只把定理對著它演成 laws / example:Theorem 4.10(唯一表示)即 `coordinates` 回 `Unique` 的型別保證(uniqueness 那半再以「植入權重必被還原」law 補上 `coordinates ∘ from_coordinates = id`,與既有 round-trip 互為反向合成);**Theorem 4.11**(方陣基底閉式)以 law `coordinates_equals_inverse_times_vector` 把「解 RREF」與「乘 B⁻¹」兩條獨立路徑當場對帳、接回可逆矩陣章;標準基底 = identity 座標映射(`[x]_E = x`);正交(旋轉)基底是剛體運動、保長度 `‖[x]_B‖ = ‖x‖`(45° 具體案例 + 任意角度 law)
 
+- [x] 座標系統互動圖解:斜格點陣 + 平行四邊形分解,拖基底 b₁ / b₂「換尺」、拖點 x,看同一個點在不同基底下的座標 `[x]_B = (c₁, c₂)` 即時變化(座標 = 沿 b₁、b₂ 各走幾步的權重),可在 [web 視覺化](#視覺化)操作(`[x]_B` 由 core 的 `coordinates` 解、白圈由 `from_coordinates` 重建套住 x 當場驗雙射;b₁ ∥ b₂ 退化時 core 回空、標為「非基底、座標未定義」)
+
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`
 - [x] Gaussian elimination:`row_echelon_form` / `reduced_row_echelon_form`、秩 `rank`、零化度 `nullity`、pivot / free 行
@@ -112,7 +114,7 @@ cargo llvm-cov
 
 ## 視覺化
 
-`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)、「零空間與 rank-nullity」(`/range` 的對偶:拖輸入 v 看像 Av 被壓到核線、塌進原點,nullity + rank = 2 由 core 兩次獨立計算當場對帳)、「行秩 = 列秩」(雙面板拖列 / 行向量,Row A(domain)與 Col A(codomain)的維度同進同退,`rank(A)` 與 `rank(Aᵀ)` 由 core 獨立計算當場對帳)、「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)與「行列式」(拖 î′ / ĵ′ 看單位正方形的像的有號面積,3×3 / 4×4 推廣為(超)體積,det 路與 rank 路由 core 獨立計算、當場對帳 Theorem 3.4(a))的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
+`web/` 是一個 React + Vite + TanStack 前端,把 core 的運算透過 **WASM** 接到 Canvas,做「矩陣作為 2D 線性變換」、「線性相依 / 平行」、「矩陣乘法 row × col 展開」(任意尺寸,點 C 的任一格攤開 dot product,維度相容性由 core 的 `can_multiply` 判定)、「高斯消去逐步播放」、「可逆矩陣 / 基本矩陣」(逐步左乘 Eₖ 累積 P = A⁻¹,配 IMT 等價條件面板)、「線性轉換守恆律」、「標準矩陣取樣」(幾何規則經 core 的 `standard_matrix` 當場取樣出矩陣)、「值域與映成」(拖行向量看 Range = Col(A) 塌縮、拖 w 由 core 的 `range_contains` 即時判定可達性)、「零空間與 rank-nullity」(`/range` 的對偶:拖輸入 v 看像 Av 被壓到核線、塌進原點,nullity + rank = 2 由 core 兩次獨立計算當場對帳)、「行秩 = 列秩」(雙面板拖列 / 行向量,Row A(domain)與 Col A(codomain)的維度同進同退,`rank(A)` 與 `rank(Aᵀ)` 由 core 獨立計算當場對帳)、「座標系統」(斜格點陣拖基底 b₁ / b₂ 換尺、拖點 x,座標 `[x]_B` 由 core 的 `coordinates` 解、`from_coordinates` 重建驗雙射)、「合成與可逆性」(兩步路徑與一步 BA 會合、逆轉換的「變形 → 復原」,合成 / 求逆 / Summary Table 全由 core 的 `composition` 模組計算)與「行列式」(拖 î′ / ĵ′ 看單位正方形的像的有號面積,3×3 / 4×4 推廣為(超)體積,det 路與 rank 路由 core 獨立計算、當場對帳 Theorem 3.4(a))的互動視覺化。**計算只在 Rust 一份** — JS 只負責繪圖與互動,每個變換後的點都是 core 算的。
 
 WASM binding 鎖在 `#[cfg(feature = "wasm")]`(`src/wasm.rs`)後面:沒開 `wasm` feature 時等於不存在,`cargo test` / `task check` 完全不受影響。
 
