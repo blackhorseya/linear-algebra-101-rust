@@ -59,6 +59,16 @@ tasks:
       # 與 web/src/lib/ 既有的基礎設施(query-client.ts)同層,前端 import 路徑最短。
       - wasm-pack build --target web --out-dir web/src/lib/wasm -- --features wasm
 
+  web:
+    desc: Start the web dev server (Vite + HMR); 先重建 WASM 產物再 pnpm dev
+    # dir 只作用於本 task 的 cmds(在 web/ 跑 pnpm)。deps 的 wasm:build 用它自己的
+    # 設定執行,仍在 repo 根目錄(--out-dir 相對 crate root),不繼承這裡的 dir。
+    dir: web
+    deps:
+      - wasm:build
+    cmds:
+      - pnpm dev
+
   check:
     desc: Run fmt:check, lint and tests as a pre-commit gate
     cmds:
