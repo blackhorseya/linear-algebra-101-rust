@@ -18,6 +18,21 @@
 //! 收束成唯一保證的「恰好一組」的前置條件 —— 這才讓我們能談 x 的「**那組**座標」。映射
 //! x ↦ [x]_B 於是是個 bijection ℝ^d → ℝ^d:[`coordinates`] 是正向,[`from_coordinates`]
 //! 是它的逆。
+//!
+//! # 單元 7-2 Coordinate Systems(講義 4.4)—— 零新碼,既有雙射就是它
+//!
+//! 學習筆記的 7-2 **完整落在既有積木上**:Theorem 4.10(唯一表示)就是 [`coordinates`] 回
+//! `Unique` 的型別保證,[`from_coordinates`] 是它的逆。沒有新計算可寫,只把這章的定理對著既有
+//! 雙射演成 laws / example(見下方 `mod laws` 與 `mod tests`):
+//!
+//! - **Theorem 4.11(方陣基底的閉式)**:當 B 的**行**就是基底、B 為**方陣**(ℝⁿ 的完整基底),
+//!   換座標就是乘可逆矩陣 —— `[x]_B = B⁻¹x`、`x = B[x]_B`。既有 `coordinates` 走的是
+//!   `Span::combination`(解 RREF),Theorem 4.11 走的是 `inverse`(乘 B⁻¹):law
+//!   `coordinates_equals_inverse_times_vector` 把這兩條**獨立路徑**當場對帳,順手把座標接回可逆
+//!   矩陣章。
+//! - **標準基底 = identity 座標映射**:`[x]_E = x`(law `standard_basis_is_the_identity_coordinate_map`)。
+//! - **正交基底是剛體運動**:旋轉後的座標軸保長度 `‖[x]_B‖ = ‖x‖`(45° 具體案例
+//!   `rotation_basis_preserves_length`、任意角度的 law `orthonormal_basis_preserves_norm`)。
 
 use crate::{LinAlgError, Solution, Span, Vector, is_basis};
 
@@ -167,6 +182,41 @@ mod tests {
             LinAlgError::CountMismatch
         );
     }
+
+    /// 單元 7-2 練習 4(具體案例):旋轉 45° 的座標軸 B = {(√2/2, √2/2), (−√2/2, √2/2)} 是一組
+    /// **正交基底**。對一個點求它在 B 下的座標,並驗證「換到旋轉座標系」是剛體運動 —— 座標向量
+    /// 的長度與原向量相同(`‖[x]_B‖ = ‖x‖`)。正交基底下座標恰是對各軸的投影(內積),故 (1,0)
+    /// 的座標是 (√2/2, −√2/2)。
+    #[test]
+    fn rotation_basis_preserves_length() {
+        let s = 0.5_f64.sqrt(); // √2/2
+        let basis = vec![v(vec![s, s]), v(vec![-s, s])];
+        let x = v(vec![1.0, 0.0]);
+
+        // [x]_B = (x·b₁, x·b₂) = (√2/2, −√2/2):正交基底下座標 = 對各軸的投影。
+        let coords = coordinates(COORD_EPS, &x, &basis).expect("旋轉基底是合法基底");
+        assert!(
+            coords.approx_equals(&v(vec![s, -s]), COORD_EPS),
+            "45° 座標 = {coords:?}"
+        );
+
+        // 剛體運動:座標軸只是旋轉,長度不變 —— ‖[x]_B‖ = ‖x‖ = 1。此處 inline 算範數
+        // (平方和開根號);範數 / 內積的一般機器留待後續章節,這裡只為演出旋轉的保長度性質。
+        let norm = |w: &Vector| w.entries().iter().map(|e| e * e).sum::<f64>().sqrt();
+        assert!(
+            (norm(&coords) - norm(&x)).abs() < COORD_EPS,
+            "‖[x]_B‖ = {} 應 = ‖x‖ = {}",
+            norm(&coords),
+            norm(&x)
+        );
+
+        // round-trip:座標餵回旋轉基底重建原點。
+        let back = from_coordinates(&coords, &basis).expect("from_coordinates 不該失敗");
+        assert!(
+            back.approx_equals(&x, COORD_EPS),
+            "round-trip 重建 = {back:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -224,6 +274,120 @@ mod laws {
                 rebuilt.approx_equals(&x, COMPARE_EPS),
                 "round-trip x → [x]_B → x 把 {:?} 變成 {rebuilt:?}(座標 {coords:?})",
                 x
+            );
+        }
+
+        /// 單元 7-2 / Theorem 4.11(方陣基底的閉式):當基底向量恰是方陣 B 的**行**時,換座標
+        /// 就是乘可逆矩陣 —— 反向 `[x]_B = B⁻¹x`、正向 `x = B[x]_B`。這把既有 `coordinates`
+        /// (走 `Span::combination` 解 RREF)與**完全獨立**的「乘 B⁻¹」路徑當場對帳:兩條路得同
+        /// 一組座標,是兩者皆正確的強證據,也把座標接回可逆矩陣章(`inverse`)。
+        #[test]
+        fn coordinates_equals_inverse_times_vector(
+            (b, x) in (1usize..=4).prop_flat_map(|dim| {
+                (int_square_matrix(dim), int_vector(dim))
+            }),
+        ) {
+            const SOLVE_EPS: f64 = 1e-9; // 整數元素上俐落的 pivot / is_basis 判定
+            const COMPARE_EPS: f64 = 1e-6; // inverse 與 RREF 各自帶捨入殘差
+
+            let dim = b.cols();
+            let basis: Vec<Vector> = (0..dim).map(|j| b.column(j).unwrap()).collect();
+
+            // 隨機方陣幾乎必可逆(其行成基底);奇異抽樣(測度零)跳過。
+            prop_assume!(is_basis(SOLVE_EPS, dim, &basis));
+
+            // 既有路徑:解 RREF 求座標。
+            let coords = coordinates(SOLVE_EPS, &x, &basis)
+                .expect("行成基底 ⟹ coordinates 不該出錯");
+
+            // Theorem 4.11 路徑:[x]_B = B⁻¹x(乘可逆矩陣)。
+            let via_inverse = b
+                .inverse(SOLVE_EPS)
+                .expect("基底 ⟹ B 可逆")
+                .multiply_vector(&x)
+                .expect("維度相容");
+            prop_assert!(
+                coords.approx_equals(&via_inverse, COMPARE_EPS),
+                "[x]_B:解 RREF = {coords:?},B⁻¹x = {via_inverse:?}"
+            );
+
+            // 反向 x = B[x]_B:from_coordinates 就是「以座標加權基底行」= B·coords。
+            let rebuilt = from_coordinates(&coords, &basis).unwrap();
+            let via_matrix = b.multiply_vector(&coords).expect("維度相容");
+            prop_assert!(
+                rebuilt.approx_equals(&via_matrix, COMPARE_EPS),
+                "x:from_coordinates = {rebuilt:?},B·[x]_B = {via_matrix:?}"
+            );
+        }
+
+        /// 單元 7-2 / Theorem 4.10(唯一表示的另一半):既有 round-trip law 驗
+        /// `from_coordinates ∘ coordinates = id`(x → [x]_B → x);此處驗**反向合成**
+        /// `coordinates ∘ from_coordinates = id` —— 任取權重 w,令 x := from_coordinates(w, B)
+        /// (以 w 加權基底),則 `coordinates(x, B)` 必還原出**那一組** w。這正是「唯一性」:既然
+        /// 只有一組權重能組出 x,座標映射回的就是植入的 w,不會是別組。
+        #[test]
+        fn coordinates_recovers_planted_weights(
+            (a, w) in (1usize..=4).prop_flat_map(|dim| {
+                (int_square_matrix(dim), int_vector(dim))
+            }),
+        ) {
+            const SOLVE_EPS: f64 = 1e-9;
+            const COMPARE_EPS: f64 = 1e-6;
+
+            let dim = a.cols();
+            let basis: Vec<Vector> = (0..dim).map(|j| a.column(j).unwrap()).collect();
+            prop_assume!(is_basis(SOLVE_EPS, dim, &basis));
+
+            // 植入:x := from_coordinates(w, B) —— 依建構,w 就是 x 在 B 下的權重。
+            let x = from_coordinates(&w, &basis).unwrap();
+            let recovered = coordinates(SOLVE_EPS, &x, &basis)
+                .expect("基底 ⟹ coordinates 不該出錯");
+            prop_assert!(
+                recovered.approx_equals(&w, COMPARE_EPS),
+                "植入權重 {w:?},座標映射還原成 {recovered:?}"
+            );
+        }
+
+        /// 單元 7-2 練習 3:標準基底 E 下,座標映射就是 identity —— `[x]_E = x`。座標是「相對於
+        /// 某組基底的權重」;當那組基底就是標準軸時,權重恰好回到分量本身(既有
+        /// `coordinates_known_cases` 已有單一案例,這裡推成 for-all)。
+        #[test]
+        fn standard_basis_is_the_identity_coordinate_map(
+            x in (1usize..=4).prop_flat_map(int_vector),
+        ) {
+            const EPS: f64 = 1e-9;
+            let dim = x.rows();
+            let std_basis: Vec<Vector> =
+                (0..dim).map(|i| Vector::standard(dim, i).unwrap()).collect();
+            let coords = coordinates(EPS, &x, &std_basis).expect("標準基底是合法基底");
+            prop_assert!(
+                coords.approx_equals(&x, EPS),
+                "[x]_E 應 = x,得 {coords:?}\n x={x:?}"
+            );
+        }
+
+        /// 單元 7-2 練習 4(一般化):任意旋轉角 θ 的座標軸 B = {(cosθ, sinθ), (−sinθ, cosθ)} 是
+        /// **正交基底**;換到這個 frame 是剛體運動,座標向量保長度 `‖[x]_B‖ = ‖x‖`。45° 只是
+        /// θ = π/4 的特例(具體案例見 `mod tests` 的 `rotation_basis_preserves_length`)。
+        #[test]
+        fn orthonormal_basis_preserves_norm(
+            theta in 0.0f64..std::f64::consts::TAU,
+            x in int_vector(2),
+        ) {
+            const EPS: f64 = 1e-7; // cos/sin 與解 RREF 帶捨入
+            let (c, s) = (theta.cos(), theta.sin());
+            let basis = vec![
+                Vector::from_vec(vec![c, s]),
+                Vector::from_vec(vec![-s, c]),
+            ];
+            let coords = coordinates(EPS, &x, &basis).expect("旋轉基底必可逆");
+
+            let norm = |w: &Vector| w.entries().iter().map(|e| e * e).sum::<f64>().sqrt();
+            prop_assert!(
+                (norm(&coords) - norm(&x)).abs() < EPS,
+                "旋轉保長度斷裂:‖[x]_B‖={}, ‖x‖={}\n θ={theta} x={x:?}",
+                norm(&coords),
+                norm(&x)
             );
         }
     }

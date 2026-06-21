@@ -45,6 +45,7 @@
 - [x] 列空間基底 `row_space_basis`(Theorem 4.8:**RREF 的非零列**構成 Row A 的基底 —— 核心一課是**列空間被列運算保留(Row A = Row R)、行空間被破壞(Col A ≠ Col R)**:故列空間基底「就地讀 RREF 列」(canonical、唯一),行空間基底卻得「回頭抓原始行」(`range_basis` 陷阱);對照 `reduce_to_basis(各列)` 取原始列子集 —— 兩者皆 Row A 合法基底、大小都 = rank 但向量不同(一個子空間多組基底)。同單元維度定理皆**零新碼**走 laws:dim Col A = rank 三路對帳、dim Col A + dim Null A = n、`rank(A) = rank(Aᵀ)`(= dim Row A = dim Col A,題 4 又以兩支基底萃取器落實)、題 5 子空間包含維度單調沿用 6-4 既有 law)
 
 - [x] 行秩 = 列秩互動圖解:雙面板並排,domain 畫 Row A(拖列向量)、codomain 畫 Col A(拖行向量),把秩拉到 1 時兩條線同時出現(方向還不同)、拉回 2 時兩面同時鋪滿 —— 維度永遠鎖在一起,可在 [web 視覺化](#視覺化)操作(dim Row A 經 `rank(Aᵀ)`、dim Col A 經 `rank(A)` 由 core 兩次獨立計算當場對帳 `rank(A) = rank(Aᵀ)`;兩組基底由 `row_space_basis`(RREF 列)與 `range_basis`(原始行)分別取出)
+- [x] 座標系統 Coordinate Systems(單元 7-2,講義 4.4):**零新碼** —— 既有 `coordinates` / `from_coordinates` 雙射(向量空間章收尾)就是這章的全部計算,只把定理對著它演成 laws / example:Theorem 4.10(唯一表示)即 `coordinates` 回 `Unique` 的型別保證(uniqueness 那半再以「植入權重必被還原」law 補上 `coordinates ∘ from_coordinates = id`,與既有 round-trip 互為反向合成);**Theorem 4.11**(方陣基底閉式)以 law `coordinates_equals_inverse_times_vector` 把「解 RREF」與「乘 B⁻¹」兩條獨立路徑當場對帳、接回可逆矩陣章;標準基底 = identity 座標映射(`[x]_E = x`);正交(旋轉)基底是剛體運動、保長度 `‖[x]_B‖ = ‖x‖`(45° 具體案例 + 任意角度 law)
 
 ### 4. 線性方程組與分解
 - [x] 線性方程組 Ax=b:`System`、`solve`、一致性 `is_consistent`、解的分類 `Solution` / `RowKind`
