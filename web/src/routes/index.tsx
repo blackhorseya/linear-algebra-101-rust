@@ -45,6 +45,11 @@ const FEATURES = [
     desc: '同一個點,換一組基底就有不同座標。拖斜格的 b₁、b₂ 換尺、拖 x 移點,看 [x]_B = (c₁, c₂) 即時變化 —— 座標是「沿 b₁、b₂ 各走幾步」的權重,由 core 解 B⁻¹x。',
   },
   {
+    to: '/operator',
+    title: '相似:運算子的矩陣表示',
+    desc: '同一個運算子,換把尺就換個矩陣 [T]_B = B⁻¹AB。拖基底看 [T]_B 的四格變、但平行四邊形面積(det)鎖死不動 —— 相似矩陣共享 det,描述變了運算子沒變。',
+  },
+  {
     to: '/composition',
     title: '合成與可逆性',
     desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',

@@ -14,6 +14,7 @@ import { Route as StandardMatrixRouteImport } from './routes/standard-matrix'
 import { Route as SpanRouteImport } from './routes/span'
 import { Route as RankRouteImport } from './routes/rank'
 import { Route as RangeRouteImport } from './routes/range'
+import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as NullspaceRouteImport } from './routes/nullspace'
 import { Route as MultiplyRouteImport } from './routes/multiply'
 import { Route as LinearityRouteImport } from './routes/linearity'
@@ -47,6 +48,11 @@ const RankRoute = RankRouteImport.update({
 const RangeRoute = RangeRouteImport.update({
   id: '/range',
   path: '/range',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorRoute = OperatorRouteImport.update({
+  id: '/operator',
+  path: '/operator',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NullspaceRoute = NullspaceRouteImport.update({
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
+  '/operator': typeof OperatorRoute
   '/range': typeof RangeRoute
   '/rank': typeof RankRoute
   '/span': typeof SpanRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
+  '/operator': typeof OperatorRoute
   '/range': typeof RangeRoute
   '/rank': typeof RankRoute
   '/span': typeof SpanRoute
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/linearity': typeof LinearityRoute
   '/multiply': typeof MultiplyRoute
   '/nullspace': typeof NullspaceRoute
+  '/operator': typeof OperatorRoute
   '/range': typeof RangeRoute
   '/rank': typeof RankRoute
   '/span': typeof SpanRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/linearity'
     | '/multiply'
     | '/nullspace'
+    | '/operator'
     | '/range'
     | '/rank'
     | '/span'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/linearity'
     | '/multiply'
     | '/nullspace'
+    | '/operator'
     | '/range'
     | '/rank'
     | '/span'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/linearity'
     | '/multiply'
     | '/nullspace'
+    | '/operator'
     | '/range'
     | '/rank'
     | '/span'
@@ -205,6 +217,7 @@ export interface RootRouteChildren {
   LinearityRoute: typeof LinearityRoute
   MultiplyRoute: typeof MultiplyRoute
   NullspaceRoute: typeof NullspaceRoute
+  OperatorRoute: typeof OperatorRoute
   RangeRoute: typeof RangeRoute
   RankRoute: typeof RankRoute
   SpanRoute: typeof SpanRoute
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/range'
       fullPath: '/range'
       preLoaderRoute: typeof RangeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operator': {
+      id: '/operator'
+      path: '/operator'
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/nullspace': {
@@ -325,6 +345,7 @@ const rootRouteChildren: RootRouteChildren = {
   LinearityRoute: LinearityRoute,
   MultiplyRoute: MultiplyRoute,
   NullspaceRoute: NullspaceRoute,
+  OperatorRoute: OperatorRoute,
   RangeRoute: RangeRoute,
   RankRoute: RankRoute,
   SpanRoute: SpanRoute,

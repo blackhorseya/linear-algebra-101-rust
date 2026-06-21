@@ -13,6 +13,7 @@ import { eliminationOps, type EliminationOps } from "./elimination";
 import { inverseOps, type InverseOps } from "./inverse";
 import { linearityOps, type LinearityOps } from "./linearity";
 import { multiplyOps, type MultiplyOps } from "./multiply";
+import { operatorOps, type OperatorOps } from "./operator";
 import { rangeOps, type RangeOps } from "./range";
 import { standardMatrixOps, type StandardMatrixOps } from "./standard-matrix";
 import { subspaceOps, type SubspaceOps } from "./subspace";
@@ -48,7 +49,8 @@ export interface Linalg
     RangeOps,
     CompositionOps,
     SubspaceOps,
-    CoordinatesOps {}
+    CoordinatesOps,
+    OperatorOps {}
 
 // 模組層級 memoize:init 是非同步且只該跑一次。即使多個元件同時呼叫,
 // 也共用同一個 Promise(配合 Query 的 staleTime: Infinity 是雙重保險)。
@@ -70,6 +72,7 @@ export function loadLinalg(): Promise<Linalg> {
     ...compositionOps,
     ...subspaceOps,
     ...coordinatesOps,
+    ...operatorOps,
   }));
   return instance;
 }
