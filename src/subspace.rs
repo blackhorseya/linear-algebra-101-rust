@@ -184,6 +184,52 @@ impl Transformation {
             .filter(|v| !v.is_approx_zero(epsilon))
             .collect()
     }
+
+    /// Null space 的**基底**(**special solutions / 自由變數法**):解齊次系統 **Av = 0**,
+    /// 由每個自由變數造出一個基底向量。這是**單元 8-1(特徵值)逼出來的新積木** ——
+    /// 補齊「矩陣子空間基底三兄弟」的最後一塊:
+    ///
+    /// | 子空間 | 基底萃取器 | 取法 |
+    /// |---|---|---|
+    /// | Col A | [`range_basis`](Transformation::range_basis) | RREF 的 pivot 行 → 抓**原始**行 |
+    /// | Row A | [`row_space_basis`](Transformation::row_space_basis) | RREF 的非零**列**(就地讀) |
+    /// | Null A | **本方法** | 每個**自由行**設 1、解出 pivot 變數 → 一個 special solution |
+    ///
+    /// 對照 6-2 的 [`null_space_contains`](Transformation::null_space_contains)(只回答
+    /// 「v 在不在 Null A」)與 [`nullity`](crate::Matrix::nullity)(只數維度):本方法
+    /// 第一次把 Null A 的成員**造出來**。回傳向量數恰為 `nullity`,彼此獨立,張出整個 Null A。
+    ///
+    /// **演算法**(special solutions):令 R 為 A 的 RREF。每個自由行 f 對一個基底向量 v ——
+    /// 設 `v[f] = 1`、其餘自由變數為 0;每條 pivot 列 i(pivot 在行 `pᵢ`)讀出
+    /// `v[pᵢ] = −R[i][f]`(因 RREF 該列方程是 `x_{pᵢ} + Σ_自由 R[i][·]·x = 0`,只有 x_f = 1)。
+    /// RREF 的 pivot 列由上到下、pivot 行遞增,故第 i 條 pivot 列的 pivot 行正是
+    /// [`pivot_columns`](crate::Matrix::pivot_columns)`[i]`。
+    ///
+    /// 邊界:滿秩(無自由行)→ **空基底**(Null A = {0},維度 0,不需特判 —— 沒有自由行
+    /// 自然產不出向量)。`epsilon` 吸收 RREF 的捨入殘差。
+    ///
+    /// 實作提示:
+    /// `R =` [`reduced_row_echelon_form`](crate::Matrix::reduced_row_echelon_form)`(epsilon)`、
+    /// `pivots =` [`pivot_columns`](crate::Matrix::pivot_columns)`(epsilon)`、
+    /// `free =` [`free_columns`](crate::Matrix::free_columns)`(epsilon)`。對每個 `f ∈ free`:
+    /// 開一個長度 `n =` [`cols()`](crate::Matrix::cols) 的 `Vec<f64>`,放 `1.0` 在 `f`、
+    /// 對 `pivots` 列舉 `(i, p)` 放 `−R.row(i)[f]` 在 `p`,包成 [`Vector::from_vec`]。
+    pub fn null_space_basis(&self, epsilon: f64) -> Vec<Vector> {
+        let rref = self.matrix().reduced_row_echelon_form(epsilon);
+        let pivots = rref.pivot_columns(epsilon);
+        let free = rref.free_columns(epsilon);
+        let n = self.matrix().cols();
+        free.into_iter()
+            .map(|f| {
+                let mut v = vec![0.0; n];
+                v[f] = 1.0;
+                for (i, p) in pivots.iter().enumerate() {
+                    v[*p] = -rref.row(i).unwrap()[f];
+                }
+                Vector::from_vec(v)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -379,6 +425,44 @@ mod tests {
         // 零矩陣:RREF 全是零列 → 全被濾掉 → 空基底(Row A = {0},維度 0)。
         let t = Transformation::new(Matrix::new(2, 3));
         assert!(t.row_space_basis(EPS).is_empty());
+    }
+
+    // ---- Null space 基底(單元 8-1 逼出:special solutions)----
+
+    #[test]
+    fn null_space_basis_builds_special_solutions() {
+        // 已是 RREF:pivot 行 0、2,自由行 1、3 → nullity 2,兩個 special solution。
+        let t = Transformation::new(Matrix::from_rows(vec![
+            vec![1.0, 2.0, 0.0, 3.0],
+            vec![0.0, 0.0, 1.0, 4.0],
+        ]));
+        let basis = t.null_space_basis(EPS);
+        assert_eq!(basis.len(), 2, "nullity 2:兩個自由行");
+        // 每個基底向量都該被矩陣壓到零(真的在 Null A 裡)。
+        for v in &basis {
+            assert!(
+                t.null_space_contains(v, EPS),
+                "special solution 必在 Null A"
+            );
+        }
+    }
+
+    #[test]
+    fn null_space_basis_of_full_rank_is_empty() {
+        // 滿秩(可逆)→ 無自由行 → Null A = {0} → 空基底。
+        let t = Transformation::new(Matrix::identity(3));
+        assert!(t.null_space_basis(EPS).is_empty());
+    }
+
+    #[test]
+    fn null_space_basis_of_zero_transformation_is_whole_space() {
+        // 零矩陣:每一行都自由 → Null A = 整個 ℝ³ → 基底 3 個、張滿。
+        let t = Transformation::new(Matrix::new(2, 3));
+        let basis = t.null_space_basis(EPS);
+        assert_eq!(basis.len(), 3, "nullity = 3:整個 domain 都被壓到零");
+        for v in &basis {
+            assert!(t.null_space_contains(v, EPS));
+        }
     }
 }
 
@@ -640,6 +724,39 @@ mod laws {
                 Span::new(EPS, canonical).equals(&Span::new(EPS, original)),
                 "兩組基底不張同一個 Row A"
             );
+        }
+
+        // ════════ 單元 8-1:Null space 基底(special solutions)════════
+        // 三條合起來即「null_space_basis 是 Null A 的一組基底」:全在 Null A 裡(成員)、
+        // 個數 = nullity(維度)、彼此獨立。獨立 + 個數 = dim ⟹ 張滿,不必另證 span。
+
+        // 成員:每個 special solution 都真的被 A 壓到零(用 6-2 的會員判定背書,
+        // 兩條獨立路徑 —— 構造 vs 驗算 —— 當場會合)。
+        #[test]
+        fn null_space_basis_vectors_lie_in_null_space(a in int_matrix_any_shape()) {
+            const EPS: f64 = 1e-7;
+            let t = Transformation::new(a);
+            for v in t.null_space_basis(EPS) {
+                prop_assert!(t.null_space_contains(&v, EPS), "special solution 不在 Null A");
+            }
+        }
+
+        // 維度:基底大小恰為 nullity(自由變數個數)—— null_space_basis 與 nullity
+        // 兩條獨立計算對帳。
+        #[test]
+        fn null_space_basis_size_equals_nullity(a in int_matrix_any_shape()) {
+            const EPS: f64 = 1e-7;
+            let nullity = a.nullity(EPS);
+            let basis = Transformation::new(a).null_space_basis(EPS);
+            prop_assert_eq!(basis.len(), nullity, "Null A 基底大小 ≠ nullity");
+        }
+
+        // 獨立:special solutions 線性獨立(各自由變數在自己那格獨佔 1,結構天然獨立)。
+        #[test]
+        fn null_space_basis_is_independent(a in int_matrix_any_shape()) {
+            const EPS: f64 = 1e-7;
+            let basis = Transformation::new(a).null_space_basis(EPS);
+            prop_assert!(is_linearly_independent(EPS, &basis), "Null A 基底不獨立");
         }
     }
 }

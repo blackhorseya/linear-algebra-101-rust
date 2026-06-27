@@ -92,7 +92,8 @@
 
 ### 6. 進階主題
 - [x] 線性變換與幾何意義(2D):矩陣作為 2D 變換 + 線性相依,可在 [web 視覺化](#視覺化)互動操作(透過 WASM 呼叫 core 的 `multiply_vector` / `is_parallel`)
-- [ ] LU 分解、特徵值 / 特徵向量 eigenvalue / eigenvector
+- [x] 特徵值與特徵向量 Eigenvalues / Eigenvectors(單元 8-1,講義 5.1):`is_eigenpair`(`A·v = λv` 且 v ≠ 0 的定義性檢查)、`characteristic_matrix`(閘門矩陣 `A − λI`,把「找特徵向量」翻成「找零空間」)、`eigenspace_basis`(特徵空間 `Eλ = Null(A − λI)` 的基底)、`has_real_eigenvalues_2x2`(2×2 判別式 `(a−d)² + 4bc ≥ 0`,90° 旋轉無實特徵值)。核心新積木是 `Transformation::null_space_basis`(special solutions / 自由變數法 —— 6-2 只有 `null_space_contains`(會員判定)與 `nullity`(數維度),從未把 Null A 的成員**造出來**),它補齊「矩陣子空間基底三兄弟」:`range_basis`(Col A)、`row_space_basis`(Row A)、`null_space_basis`(Null A)。定理走 laws:特徵空間 `Eλ = Null(A − λI)`(dim Eλ = nullity(A − λI))、運算子的特徵向量 = 其標準矩陣的特徵向量(經 Theorem 2.9 橋接 closure 與矩陣,故運算子版檢查不另立函式)、對稱 2×2 必有實特徵值;`null_space_basis` 三律(成員 ∈ Null A、size = nullity、線性獨立 ⟹ 為基底)
+- [ ] LU 分解 LU decomposition
 
 > 每個主題對應一支 `src/*.rs` 與其 inline `#[cfg(test)]` 測試模組。
 
