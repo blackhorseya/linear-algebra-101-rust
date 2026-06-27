@@ -20,6 +20,7 @@ import { Route as MultiplyRouteImport } from './routes/multiply'
 import { Route as LinearityRouteImport } from './routes/linearity'
 import { Route as InvertibilityRouteImport } from './routes/invertibility'
 import { Route as EliminationRouteImport } from './routes/elimination'
+import { Route as EigenvaluesRouteImport } from './routes/eigenvalues'
 import { Route as DeterminantRouteImport } from './routes/determinant'
 import { Route as CoordinatesRouteImport } from './routes/coordinates'
 import { Route as CompositionRouteImport } from './routes/composition'
@@ -80,6 +81,11 @@ const EliminationRoute = EliminationRouteImport.update({
   path: '/elimination',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EigenvaluesRoute = EigenvaluesRouteImport.update({
+  id: '/eigenvalues',
+  path: '/eigenvalues',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DeterminantRoute = DeterminantRouteImport.update({
   id: '/determinant',
   path: '/determinant',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/composition': typeof CompositionRoute
   '/coordinates': typeof CoordinatesRoute
   '/determinant': typeof DeterminantRoute
+  '/eigenvalues': typeof EigenvaluesRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/composition': typeof CompositionRoute
   '/coordinates': typeof CoordinatesRoute
   '/determinant': typeof DeterminantRoute
+  '/eigenvalues': typeof EigenvaluesRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/composition': typeof CompositionRoute
   '/coordinates': typeof CoordinatesRoute
   '/determinant': typeof DeterminantRoute
+  '/eigenvalues': typeof EigenvaluesRoute
   '/elimination': typeof EliminationRoute
   '/invertibility': typeof InvertibilityRoute
   '/linearity': typeof LinearityRoute
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/composition'
     | '/coordinates'
     | '/determinant'
+    | '/eigenvalues'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/composition'
     | '/coordinates'
     | '/determinant'
+    | '/eigenvalues'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/composition'
     | '/coordinates'
     | '/determinant'
+    | '/eigenvalues'
     | '/elimination'
     | '/invertibility'
     | '/linearity'
@@ -212,6 +224,7 @@ export interface RootRouteChildren {
   CompositionRoute: typeof CompositionRoute
   CoordinatesRoute: typeof CoordinatesRoute
   DeterminantRoute: typeof DeterminantRoute
+  EigenvaluesRoute: typeof EigenvaluesRoute
   EliminationRoute: typeof EliminationRoute
   InvertibilityRoute: typeof InvertibilityRoute
   LinearityRoute: typeof LinearityRoute
@@ -304,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EliminationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/eigenvalues': {
+      id: '/eigenvalues'
+      path: '/eigenvalues'
+      fullPath: '/eigenvalues'
+      preLoaderRoute: typeof EigenvaluesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/determinant': {
       id: '/determinant'
       path: '/determinant'
@@ -340,6 +360,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompositionRoute: CompositionRoute,
   CoordinatesRoute: CoordinatesRoute,
   DeterminantRoute: DeterminantRoute,
+  EigenvaluesRoute: EigenvaluesRoute,
   EliminationRoute: EliminationRoute,
   InvertibilityRoute: InvertibilityRoute,
   LinearityRoute: LinearityRoute,
