@@ -4,7 +4,7 @@
 //! 慣例):快照攤平 `flatten`、寫死的容差 `TRACE_EPSILON`、ERO 的課本式描述
 //! `describe_*`,以及僅測試編譯的對帳建構 helper。
 
-use crate::{Matrix, Transformation};
+use crate::{Matrix, Transformation, Vector};
 
 /// 消去法搜尋 pivot 時「算零」的門檻;與 `elimination.rs` 的測試同量級。寫死在 binding
 /// 內(沿用 `are_parallel` 把 epsilon 寫死的慣例),呼叫端不必煩惱容差。
@@ -20,6 +20,21 @@ pub(super) fn transformation_2x2(a: f64, b: f64, c: f64, d: f64) -> Transformati
 pub(super) fn flatten(m: &Matrix) -> Vec<f64> {
     (0..m.rows())
         .flat_map(|i| m.row(i).unwrap().iter().copied())
+        .collect()
+}
+
+/// row-major flatten → n×n `Matrix`(計算機軌道的通用入口;前端保證長度 n·n)。
+/// 2×2 各章沿用自己的攤平慣例,這支給 `*_n` 系列 binding 共用。
+pub(super) fn matrix_n(data: &[f64], n: usize) -> Matrix {
+    debug_assert_eq!(data.len(), n * n, "前端保證 data 為 n×n 的 flatten");
+    Matrix::from_rows(data.chunks(n).map(<[f64]>::to_vec).collect())
+}
+
+/// 基底向量串攤平串接(`&[Vector]` → 逐支 entries 相連)—— `*_n` 基底 binding 共用;
+/// 呼叫端以「總長 ÷ n = 支數」還原維度(長度就把維度說完了,沿 2×2 各章慣例)。
+pub(super) fn flatten_vectors(vs: &[Vector]) -> Vec<f64> {
+    vs.iter()
+        .flat_map(|v| v.entries().iter().copied())
         .collect()
 }
 

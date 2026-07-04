@@ -1,6 +1,7 @@
 // 座標系統視覺化(/coordinates)的 binding —— 鏡像 src/wasm/coordinates.rs。
 import {
   coordinates_2d,
+  coordinates_n,
   from_coordinates_2d,
 } from "../wasm/linear_algebra_101.js";
 
@@ -19,6 +20,11 @@ export interface CoordinatesOps {
     py: number,
   ) => Float64Array;
   /** 由座標重建 x = c₁·b₁ + c₂·b₂(core 的 `from_coordinates`),回 `[x, y]`。 */
+  /**
+   * `coordinates2d` 的 n×n 通用版(計算機):`basisData` 為 row-major n×n、
+   * 其**行**為基底向量;回 `[c₁…cₙ]`,基底退化回空陣列。
+   */
+  coordinatesN: (basisData: number[], n: number, x: number[]) => Float64Array;
   fromCoordinates2d: (
     b1x: number,
     b1y: number,
@@ -31,5 +37,7 @@ export interface CoordinatesOps {
 
 export const coordinatesOps: CoordinatesOps = {
   coordinates2d: coordinates_2d,
+  coordinatesN: (basisData, n, x) =>
+    coordinates_n(Float64Array.from(basisData), n, Float64Array.from(x)),
   fromCoordinates2d: from_coordinates_2d,
 };

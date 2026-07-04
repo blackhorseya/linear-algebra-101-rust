@@ -10,6 +10,15 @@ use super::helpers::TRACE_EPSILON;
 use crate::{Vector, coordinates, from_coordinates};
 use wasm_bindgen::prelude::*;
 
+/// row-major n×n 的 flatten,取「行」為基底向量 b₁…bₙ(行 = 基底,沿 standard
+/// matrix「行 = 基底像」的擺法)。`coordinates_n` / operator 章的 `b_matrix_n` 共用。
+pub(super) fn basis_columns(data: &[f64], n: usize) -> Vec<Vector> {
+    debug_assert_eq!(data.len(), n * n, "前端保證基底矩陣為 n×n 的 flatten");
+    (0..n)
+        .map(|j| Vector::from_vec((0..n).map(|i| data[i * n + j]).collect()))
+        .collect()
+}
+
 /// x 在有序基底 B = {b₁, b₂} 下的座標 [x]_B = (c₁, c₂)(core 的 `coordinates`):
 /// 回 `[c₁, c₂]`;當 b₁ ∥ b₂(退化、不是 ℝ² 的基底)時回 `[]`(邊界編碼:空 = 座標未定義)。
 /// 前端據此切換「畫斜格 / 顯示退化警告」,綠 / 紅都由 core 判,不在 JS 寫死。
@@ -21,6 +30,16 @@ pub fn coordinates_2d(b1x: f64, b1y: f64, b2x: f64, b2y: f64, px: f64, py: f64) 
     ];
     let x = Vector::from_vec(vec![px, py]);
     coordinates(TRACE_EPSILON, &x, &basis)
+        .map(|c| c.entries().to_vec())
+        .unwrap_or_default()
+}
+
+/// [`coordinates_2d`] 的 n×n 通用版(計算機軌道):`basis_data` 為 row-major n×n,
+/// 其**行**為基底向量 b₁…bₙ;`x_data` 長度 n。回 `[c₁…cₙ]`;基底退化回 `[]`。
+#[wasm_bindgen]
+pub fn coordinates_n(basis_data: Vec<f64>, n: usize, x_data: Vec<f64>) -> Vec<f64> {
+    let basis = basis_columns(&basis_data, n);
+    coordinates(TRACE_EPSILON, &Vector::from_vec(x_data), &basis)
         .map(|c| c.entries().to_vec())
         .unwrap_or_default()
 }
@@ -77,5 +96,18 @@ mod tests {
             (back[0] - 3.0).abs() < 1e-9 && (back[1] - 3.0).abs() < 1e-9,
             "back={back:?}"
         );
+    }
+
+    /// n×n 通用版:標準基底(I₃ 的行)下座標映射是 identity;退化基底回空。
+    #[test]
+    fn coordinates_n_standard_basis_is_identity_and_degenerate_is_empty() {
+        let i3 = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert_eq!(
+            coordinates_n(i3, 3, vec![3.0, 5.0, 7.0]),
+            vec![3.0, 5.0, 7.0]
+        );
+        // 兩行相同 → 行相依,不是 ℝ³ 的基底。
+        let degenerate = vec![1.0, 1.0, 0.0, 2.0, 2.0, 0.0, 3.0, 3.0, 1.0];
+        assert!(coordinates_n(degenerate, 3, vec![1.0, 1.0, 1.0]).is_empty());
     }
 }

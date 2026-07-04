@@ -11,7 +11,7 @@
 //!
 //! A 一律以 row-major `Vec<f64>`(2×2 flatten)過界(沿 determinant / operator 的矩陣慣例)。
 
-use super::helpers::flatten;
+use super::helpers::{flatten, flatten_vectors, matrix_n};
 use crate::Matrix;
 use wasm_bindgen::prelude::*;
 
@@ -47,6 +47,24 @@ pub fn eigenspace_basis_2d(a: Vec<f64>, lambda: f64, epsilon: f64) -> Vec<f64> {
                 .flat_map(|v| v.entries().iter().copied())
                 .collect()
         })
+        .unwrap_or_default()
+}
+
+/// [`characteristic_matrix_2d`] 的 n×n 通用版(計算機軌道):回 row-major flatten 的
+/// M = A − λI。方陣恆有定義;理論上的失敗回 `[]`(沿 2d 版邊界編碼)。
+#[wasm_bindgen]
+pub fn characteristic_matrix_n(a: Vec<f64>, n: usize, lambda: f64) -> Vec<f64> {
+    crate::characteristic_matrix(&matrix_n(&a, n), lambda)
+        .map(|m| flatten(&m))
+        .unwrap_or_default()
+}
+
+/// [`eigenspace_basis_2d`] 的 n×n 通用版(計算機軌道):Eλ 基底攤平串接,
+/// 支數 = 總長 ÷ n = 幾何重數(0 = λ 非特徵值)。`epsilon` 語意同 2d 版。
+#[wasm_bindgen]
+pub fn eigenspace_basis_n(a: Vec<f64>, n: usize, lambda: f64, epsilon: f64) -> Vec<f64> {
+    crate::eigenspace_basis(epsilon, &matrix_n(&a, n), lambda)
+        .map(|basis| flatten_vectors(&basis))
         .unwrap_or_default()
 }
 
@@ -98,5 +116,18 @@ mod tests {
     fn has_real_eigenvalues_2x2_distinguishes_rotation_from_symmetric() {
         assert!(!has_real_eigenvalues_2x2(vec![0.0, -1.0, 1.0, 0.0]));
         assert!(has_real_eigenvalues_2x2(vec![2.0, 1.0, 1.0, 2.0]));
+    }
+
+    /// n×n 通用版:diag(2,3,2) 在 λ = 2 —— M = A−2I 只動主對角線,
+    /// Eλ 幾何重數 2(基底 2 支、各長 3)。
+    #[test]
+    fn n_variants_handle_3x3_diagonal() {
+        let a = vec![2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 2.0];
+        assert_eq!(
+            characteristic_matrix_n(a.clone(), 3, 2.0),
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+        );
+        let basis = eigenspace_basis_n(a, 3, 2.0, 1e-9);
+        assert_eq!(basis.len() / 3, 2, "diag(2,3,2) 在 λ=2 幾何重數 2");
     }
 }

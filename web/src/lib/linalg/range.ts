@@ -2,6 +2,7 @@
 import {
   is_onto,
   range_basis,
+  range_basis_n,
   range_contains,
   solve_for_input,
   unreachable_vector,
@@ -23,6 +24,8 @@ export interface RangeOps {
    * 分別代表值域 = {0} / 直線 / ℝ² —— 支數 = rank,長度就把維度說完了。
    */
   rangeBasis: (a: number, b: number, c: number, d: number) => Float64Array;
+  /** n×n 通用版(計算機):`data` 為 row-major flatten;支數 = 總長 ÷ n = rank。 */
+  rangeBasisN: (data: number[], n: number) => Float64Array;
   /** w ∈ Range(T_A)?(core 的 `range_contains`:w 可達 ⟺ Ax = w 相容)。 */
   rangeContains: (
     a: number,
@@ -57,6 +60,7 @@ export interface RangeOps {
 
 export const rangeOps: RangeOps = {
   rangeBasis: range_basis,
+  rangeBasisN: (data, n) => range_basis_n(Float64Array.from(data), n),
   rangeContains: range_contains,
   isOnto: is_onto,
   unreachableVector: unreachable_vector,

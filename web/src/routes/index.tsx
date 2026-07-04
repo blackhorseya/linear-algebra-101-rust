@@ -62,12 +62,11 @@ type OpId =
   | 'eigen'
   | 'coords'
 
-/** 運算選單:need 決定顯示哪些輸入;only2 = 目前 binding 僅支援 2×2。 */
+/** 運算選單:need 決定顯示哪些輸入。九種全部 n×n 通用(binding 的 `*_n` 系列)。 */
 const OPS: {
   id: OpId
   name: string
   need: ('B' | 'v' | 'lambda')[]
-  only2?: boolean
 }[] = [
   { id: 'Av', name: 'A·v', need: ['v'] },
   { id: 'AB', name: 'A·B', need: ['B'] },
@@ -75,9 +74,9 @@ const OPS: {
   { id: 'inv', name: 'A⁻¹', need: [] },
   { id: 'rref', name: 'RREF·rank', need: [] },
   { id: 'solve', name: '解 Ax = b', need: ['v'] },
-  { id: 'subspace', name: '子空間基底', need: [], only2: true },
-  { id: 'eigen', name: '特徵檢定', need: ['lambda'], only2: true },
-  { id: 'coords', name: '座標·[T]_B', need: ['B', 'v'], only2: true },
+  { id: 'subspace', name: '子空間基底', need: [] },
+  { id: 'eigen', name: '特徵檢定', need: ['lambda'] },
+  { id: 'coords', name: '座標·[T]_B', need: ['B', 'v'] },
 ]
 
 /** 唯讀矩陣(計算結果用,monospace 格子)。 */
@@ -102,12 +101,21 @@ function Mat({ grid }: { grid: number[][] }) {
   )
 }
 
-/** 把攤平的基底(長度 0 / 2 / 4)印成向量列。 */
-function fmtBasis(b: Float64Array): string {
+/** 把攤平的基底(每 n 個一支向量)印成向量列。 */
+function fmtBasis(b: Float64Array, n: number): string {
   if (b.length === 0) return '∅(只有零向量)'
   const vs: string[] = []
-  for (let i = 0; i < b.length; i += 2) vs.push(`(${fmt(b[i])}, ${fmt(b[i + 1])})`)
+  for (let i = 0; i < b.length; i += n) {
+    vs.push(`(${Array.from(b.subarray(i, i + n), fmt).join(', ')})`)
+  }
   return vs.join('、')
+}
+
+/** 把攤平的 n×n(row-major)reshape 成巢狀陣列給 <Mat> 用。 */
+function reshape(flat: ArrayLike<number>, n: number): number[][] {
+  return Array.from({ length: n }, (_, r) =>
+    Array.from({ length: n }, (_, c) => flat[r * n + c]),
+  )
 }
 
 const fmtVec = (v: ArrayLike<number>): string =>
@@ -280,12 +288,9 @@ function Home() {
     applyA(resizeGrid(gridA, next))
     setGridB((g) => resizeGrid(g, next))
     setVec((v) => resizeVec(v, next))
-    // 2×2 專用運算在大尺寸下沒有 binding,自動退回通用的 A·v。
-    if (next !== 2 && OPS.find((o) => o.id === op)?.only2) setOp('Av')
   }
 
   const active = OPS.find((o) => o.id === op)!
-  const opDisabled = (o: (typeof OPS)[number]) => (o.only2 ?? false) && n !== 2
   const flatA = gridA.flat()
 
   // 小整數(−5…5)隨機出題:A 必隨機(寫回共享);當前運算用到的 B / v 一起換,
@@ -323,19 +328,14 @@ function Home() {
             <button
               key={o.id}
               type="button"
-              disabled={opDisabled(o)}
               onClick={() => setOp(o.id)}
-              title={opDisabled(o) ? '目前僅支援 2×2(binding 限制)' : undefined}
               className={`rounded-md border px-3 py-1.5 text-sm transition ${
                 op === o.id
                   ? 'border-violet-500 bg-violet-500/15 text-violet-200'
-                  : opDisabled(o)
-                    ? 'cursor-not-allowed border-slate-800 bg-slate-900/40 text-slate-600'
-                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                  : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
               }`}
             >
               {o.name}
-              {o.only2 && <span className="ml-1 text-[10px] text-slate-500">2×2</span>}
             </button>
           ))}
         </div>
@@ -636,57 +636,55 @@ function CalcResult({
       )
     }
     case 'subspace': {
-      // 2×2 專用:三大子空間基底各自由 core 算,支數 = 維度。
-      const [a, b, c, d] = flatA
-      const col = linalg.rangeBasis(a, b, c, d)
-      const row = linalg.rowSpaceBasis(a, b, c, d)
-      const nul = linalg.eigenspaceBasis2d(flatA, 0, EIGEN_EPSILON) // Null A = E₀
-      const rank = linalg.rank(a, b, c, d)
+      // 三大子空間基底各自由 core 算(n×n 通用),支數 = 維度。
+      const col = linalg.rangeBasisN(flatA, n)
+      const row = linalg.rowSpaceBasisN(flatA, n)
+      const nul = linalg.nullSpaceBasisN(flatA, n)
+      const rank = col.length / n
       return (
         <ResultCard title="子空間基底 — Col / Row / Null" to="/nullspace">
-          <Row label={`Col A 基底(dim = ${col.length / 2})`}>
-            <span className="font-mono text-sm text-amber-300">{fmtBasis(col)}</span>
+          <Row label={`Col A 基底(dim = ${col.length / n})`}>
+            <span className="font-mono text-sm text-amber-300">{fmtBasis(col, n)}</span>
           </Row>
-          <Row label={`Row A 基底(dim = ${row.length / 2})`}>
-            <span className="font-mono text-sm text-sky-300">{fmtBasis(row)}</span>
+          <Row label={`Row A 基底(dim = ${row.length / n})`}>
+            <span className="font-mono text-sm text-sky-300">{fmtBasis(row, n)}</span>
           </Row>
-          <Row label={`Null A 基底(dim = ${nul.length / 2})`}>
-            <span className="font-mono text-sm text-violet-300">{fmtBasis(nul)}</span>
+          <Row label={`Null A 基底(dim = ${nul.length / n})`}>
+            <span className="font-mono text-sm text-violet-300">{fmtBasis(nul, n)}</span>
           </Row>
           <p className="text-xs text-slate-500">
-            rank = {rank}:dim Col = dim Row(行秩 = 列秩),rank + dim Null = 2(rank-nullity)——
-            三個基底各自獨立算,維度關係是定理。
+            rank = {rank}:dim Col = dim Row(行秩 = 列秩),rank + dim Null = {n}
+            (rank-nullity)—— 三個基底各自獨立算,維度關係是定理。
           </p>
         </ResultCard>
       )
     }
     case 'eigen': {
-      // 2×2 專用:λ 是不是特徵值 = A − λI 塌不塌(det 歸零)。
-      const cm = linalg.characteristicMatrix2d(flatA, lambda)
-      const detM = linalg.determinant([cm[0], cm[1], cm[2], cm[3]], 2)
-      const eig = linalg.eigenspaceBasis2d(flatA, lambda, EIGEN_EPSILON)
-      const hasReal = linalg.hasRealEigenvalues2x2(flatA)
+      // λ 是不是特徵值 = A − λI 塌不塌(det 歸零)。n×n 通用;
+      // 「有沒有實特徵值」的判別式只有 2×2 有 binding,大尺寸省略該提示。
+      const cm = linalg.characteristicMatrixN(flatA, n, lambda)
+      const detM = linalg.determinant(Array.from(cm), n)
+      const eig = linalg.eigenspaceBasisN(flatA, n, lambda, EIGEN_EPSILON)
+      const hasReal = n === 2 ? linalg.hasRealEigenvalues2x2(flatA) : null
       const isEigen = eig.length > 0
       return (
         <ResultCard title={`特徵檢定 — λ = ${fmt(lambda)} 是特徵值嗎?`} to="/eigenvalues">
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-slate-400">A − λI =</span>
-            <Mat
-              grid={[
-                [cm[0], cm[1]],
-                [cm[2], cm[3]],
-              ]}
-            />
+            <Mat grid={reshape(cm, n)} />
             <span className="font-mono text-sm text-slate-400">det = {fmt(detM)}</span>
           </div>
           {isEigen ? (
             <p className="font-mono text-sm text-emerald-300">
-              ✓ λ = {fmt(lambda)} 是特徵值 —— E_λ 基底:{fmtBasis(eig)}
+              ✓ λ = {fmt(lambda)} 是特徵值(幾何重數 {eig.length / n})—— E_λ 基底:
+              {fmtBasis(eig, n)}
             </p>
           ) : (
             <p className="font-mono text-sm text-slate-400">
               ✗ 不是:det(A − λI) ≠ 0,A − λI 沒塌。
-              {hasReal ? '換個 λ 試試。' : '(這顆 A 根本沒有實特徵值 —— 如純旋轉。)'}
+              {hasReal === false
+                ? '(這顆 A 根本沒有實特徵值 —— 如純旋轉。)'
+                : '換個 λ 試試。'}
             </p>
           )}
           <p className="text-xs text-slate-500">
@@ -696,31 +694,26 @@ function CalcResult({
       )
     }
     case 'coords': {
-      // 2×2 專用:B 的行當基底 {b₁, b₂},問 x 的 B-座標與 A 的 B-表示。
-      const b1: [number, number] = [gridB[0][0], gridB[1][0]]
-      const b2: [number, number] = [gridB[0][1], gridB[1][1]]
-      const coord = linalg.coordinates2d(b1[0], b1[1], b2[0], b2[1], vec[0], vec[1])
-      const tb = linalg.bMatrix2d(flatA, b1[0], b1[1], b2[0], b2[1])
+      // B 的行當基底 {b₁…bₙ},問 x 的 B-座標與 A 的 B-表示(n×n 通用)。
+      const flatB = gridB.flat()
+      const coord = linalg.coordinatesN(flatB, n, vec)
+      const tb = linalg.bMatrixN(flatA, n, flatB)
       const degenerate = coord.length === 0
       return (
         <ResultCard title="座標與 [T]_B — 換把尺再量一次" to="/coordinates">
           {degenerate ? (
             <p className="text-sm text-rose-400">
-              b₁ ∥ b₂:B 的行不是 ℝ² 的基底,座標未定義 —— 換一顆行獨立的 B。
+              B 的行線性相依,不是 ℝ{n === 2 ? '²' : n === 3 ? '³' : '⁴'} 的基底,
+              座標未定義 —— 換一顆行獨立的 B。
             </p>
           ) : (
             <>
-              <Row label="x 的 B-座標 [x]_B(x = c₁·b₁ + c₂·b₂)">
+              <Row label="x 的 B-座標 [x]_B(x = Σ cᵢ·bᵢ)">
                 <span className="font-mono text-sm text-sky-300">{fmtVec(coord)}</span>
               </Row>
               <Row label="A 的 B-表示 [T]_B = B⁻¹AB">
-                {tb.length === 4 ? (
-                  <Mat
-                    grid={[
-                      [tb[0], tb[1]],
-                      [tb[2], tb[3]],
-                    ]}
-                  />
+                {tb.length === n * n ? (
+                  <Mat grid={reshape(tb, n)} />
                 ) : (
                   <span className="text-sm text-rose-400">未定義</span>
                 )}

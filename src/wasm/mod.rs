@@ -30,15 +30,23 @@ pub mod subspace;
 pub mod transform;
 
 pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformation_report};
-pub use coordinates::{coordinates_2d, from_coordinates_2d};
+pub use coordinates::{coordinates_2d, coordinates_n, from_coordinates_2d};
 pub use determinant::{determinant, is_invertible};
-pub use eigen::{characteristic_matrix_2d, eigenspace_basis_2d, has_real_eigenvalues_2x2};
+pub use eigen::{
+    characteristic_matrix_2d, characteristic_matrix_n, eigenspace_basis_2d, eigenspace_basis_n,
+    has_real_eigenvalues_2x2,
+};
 pub use elimination::{EliminationTrace, eliminate};
 pub use inverse::{InverseTrace, invert_trace};
 pub use linearity::{add_vectors, check_linearity, scale_vector};
 pub use multiply::{MultiplyExpansion, can_multiply, multiply_expand};
-pub use operator::b_matrix_2d;
-pub use range::{is_onto, range_basis, range_contains, solve_for_input, unreachable_vector};
+pub use operator::{b_matrix_2d, b_matrix_n};
+pub use range::{
+    is_onto, range_basis, range_basis_n, range_contains, solve_for_input, unreachable_vector,
+};
 pub use standard_matrix::{apply_rule, sample_standard_matrix};
-pub use subspace::{null_space_contains, nullity, rank, rank_transpose, row_space_basis};
+pub use subspace::{
+    null_space_basis_n, null_space_contains, nullity, rank, rank_transpose, row_space_basis,
+    row_space_basis_n,
+};
 pub use transform::{are_parallel, transform_point};
