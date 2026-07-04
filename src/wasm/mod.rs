@@ -33,8 +33,8 @@ pub use composition::{compose_matrix, inverse_matrix, is_one_to_one, transformat
 pub use coordinates::{coordinates_2d, coordinates_n, from_coordinates_2d};
 pub use determinant::{determinant, is_invertible};
 pub use eigen::{
-    characteristic_matrix_2d, characteristic_matrix_n, eigenspace_basis_2d, eigenspace_basis_n,
-    has_real_eigenvalues_2x2,
+    characteristic_matrix_2d, characteristic_matrix_n, eigen_reports_n, eigenspace_basis_2d,
+    eigenspace_basis_n, has_real_eigenvalues_2x2, matrix_trace, triangular_eigenvalues_n,
 };
 pub use elimination::{EliminationTrace, eliminate};
 pub use inverse::{InverseTrace, invert_trace};

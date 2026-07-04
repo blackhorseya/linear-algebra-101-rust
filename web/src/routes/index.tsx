@@ -60,6 +60,7 @@ type OpId =
   | 'solve'
   | 'subspace'
   | 'eigen'
+  | 'eigenAnalysis'
   | 'coords'
 
 /** 運算選單:need 決定顯示哪些輸入。九種全部 n×n 通用(binding 的 `*_n` 系列)。 */
@@ -76,6 +77,7 @@ const OPS: {
   { id: 'solve', name: '解 Ax = b', need: ['v'] },
   { id: 'subspace', name: '子空間基底', need: [] },
   { id: 'eigen', name: '特徵檢定', need: ['lambda'] },
+  { id: 'eigenAnalysis', name: '特徵分析', need: [] },
   { id: 'coords', name: '座標·[T]_B', need: ['B', 'v'] },
 ]
 
@@ -690,6 +692,54 @@ function CalcResult({
           <p className="text-xs text-slate-500">
             到「特徵值與特徵向量」拖 λ 滑桿,看 det(A−λI) 歸零時平行四邊形塌成線。
           </p>
+        </ResultCard>
+      )
+    }
+    case 'eigenAnalysis': {
+      // 8-2/8-3:trace + 三角直讀 + 重數報告。特徵值列表的唯一來源是三角直讀
+      // (一般求根等下一章),非三角時只給 trace 與提示。
+      const trace = linalg.matrixTrace(flatA, n)
+      const evs = linalg.triangularEigenvaluesN(flatA, n, EIGEN_EPSILON)
+      const triangular = evs.length > 0
+      const reports = triangular
+        ? linalg.eigenReportsN(flatA, n, Array.from(evs), EIGEN_EPSILON)
+        : []
+      return (
+        <ResultCard title="特徵分析 — trace·重數·虧損(8-2/8-3)" to="/eigenvalues">
+          <Row label="tr(A) = Σ aᵢᵢ(相似不變量;= Σ 特徵值)">
+            <span className="font-mono text-sm text-amber-300">{fmt(trace)}</span>
+          </Row>
+          {triangular ? (
+            <>
+              <Row label="特徵值(三角矩陣直讀主對角線,重根保留)">
+                <span className="font-mono text-sm text-sky-300">
+                  {Array.from(evs, fmt).join('、')}
+                </span>
+              </Row>
+              <div className="space-y-1 border-t border-slate-800 pt-3">
+                {reports.map((r) => (
+                  <p key={r.value} className="font-mono text-xs text-slate-300">
+                    λ = {fmt(r.value)}:代數重數 {r.algebraic} · 幾何重數 {r.geometric} ·{' '}
+                    {r.isDeficient ? (
+                      <span className="text-rose-400">虧損(幾何 &lt; 代數)</span>
+                    ) : (
+                      <span className="text-emerald-400">足額 ✓</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500">
+                Theorem 5.1:幾何 ≤ 代數,永不超額。任何一個 λ 虧損 ⟹ A 不可對角化
+                (下一章的判準)—— 兩個重數各自由 core 獨立計算。
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">
+              A 不是三角矩陣 —— 特徵值直讀(8-2 Property 3)只適用上/下三角;
+              一般矩陣的求根等下一章。可先用「特徵檢定」逐一試 λ,或用 🎲 出一顆
+              三角矩陣(把左下角填 0)。
+            </p>
+          )}
         </ResultCard>
       )
     }
