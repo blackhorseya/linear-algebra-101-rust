@@ -6,83 +6,127 @@ export const Route = createFileRoute('/')({
 })
 
 // 功能入口(原本掛在 header nav,改為首頁卡片)。
-// `as const` 讓 `to` 保持字面量型別,Link 的路徑打錯會直接編譯失敗。
-// 新增視覺化頁面時在這裡補一筆即可。
-const FEATURES = [
+// 章節照 3Blue1Brown《Essence of Linear Algebra》的敘事順序分節 ——
+// 向量 → 變換 → 合成 → 行列式 → 逆與子空間 → 換基底 → 特徵值,
+// 每節標題附對應集數。`as const` 讓 `to` 保持字面量型別,Link 的路徑
+// 打錯會直接編譯失敗。新增視覺化頁面時在對應章節補一筆即可。
+const SECTIONS = [
   {
-    to: '/transform',
-    title: '2D 線性變換',
-    desc: '拖動向量、調整 2×2 矩陣,看整個平面如何被變形;行列式的幾何意義 = 面積縮放與翻面。',
+    title: '向量與張成',
+    sub: 'Essence Ep.1–2 — 一切從向量、線性組合與 span 開始。',
+    items: [
+      {
+        to: '/span',
+        title: '張成 Span',
+        desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
+      },
+    ],
   },
   {
-    to: '/linearity',
-    title: '線性轉換與守恆律',
-    desc: '拖動 u、v 看 shear / 投影下的影像:T(u+v) 與 T(u)+T(v) 永遠在同一點會合 —— Theorem 2.7「矩陣誘導必線性」看得見。',
+    title: '線性變換與矩陣',
+    sub: 'Essence Ep.3 — 矩陣不是數字表,是把整個平面拉扯變形的動詞。',
+    items: [
+      {
+        to: '/transform',
+        title: '2D 線性變換',
+        desc: '拖動向量、調整 2×2 矩陣,看整個平面如何被變形;行列式的幾何意義 = 面積縮放與翻面。',
+      },
+      {
+        to: '/linearity',
+        title: '線性轉換與守恆律',
+        desc: '拖動 u、v 看 shear / 投影下的影像:T(u+v) 與 T(u)+T(v) 永遠在同一點會合 —— Theorem 2.7「矩陣誘導必線性」看得見。',
+      },
+      {
+        to: '/standard-matrix',
+        title: '標準矩陣取樣',
+        desc: '選幾何規則(旋轉、反射、剪切⋯),看 e₁、e₂ 的影像被取樣、直放成矩陣的行 —— Theorem 2.9「線性轉換必由唯一矩陣誘導」現場上演。',
+      },
+    ],
   },
   {
-    to: '/standard-matrix',
-    title: '標準矩陣取樣',
-    desc: '選幾何規則(旋轉、反射、剪切⋯),看 e₁、e₂ 的影像被取樣、直放成矩陣的行 —— Theorem 2.9「線性轉換必由唯一矩陣誘導」現場上演。',
+    title: '乘法即合成',
+    sub: 'Essence Ep.4 — 矩陣乘法就是「先做一個變換、再做下一個」。',
+    items: [
+      {
+        to: '/multiply',
+        title: '矩陣乘法',
+        desc: '任意尺寸 (m×n)·(n×p) 的 row × col 互動展開:點 C 的任一格看它由哪一列點積哪一欄,並親手碰到「維度不合不能乘」。',
+      },
+      {
+        to: '/composition',
+        title: '合成與可逆性',
+        desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',
+      },
+    ],
   },
   {
-    to: '/range',
-    title: '值域與映成',
-    desc: '拖動矩陣的行向量,看 Range(T) = Col(A) 從整個平面塌成直線;拖 w 問「到得了嗎?」—— 可達性與映成判定由 core 即時計算。',
-  },
-  {
-    to: '/nullspace',
-    title: '零空間與 rank-nullity',
-    desc: '/range 的對偶:拖輸入 v 看它的像 Av,落到核線上時被壓到原點;nullity 與 rank 各自由 core 算,相加 = 2 當場驗證 rank-nullity 定理。',
-  },
-  {
-    to: '/rank',
-    title: '行秩 = 列秩',
-    desc: 'Row A(domain)與 Col A(codomain)是不同空間的不同子空間,維度卻永遠相等。拖列向量或行向量,看兩邊的維度同進同退 —— rank(A) = rank(Aᵀ) 看得見。',
-  },
-  {
-    to: '/coordinates',
-    title: '座標系統',
-    desc: '同一個點,換一組基底就有不同座標。拖斜格的 b₁、b₂ 換尺、拖 x 移點,看 [x]_B = (c₁, c₂) 即時變化 —— 座標是「沿 b₁、b₂ 各走幾步」的權重,由 core 解 B⁻¹x。',
-  },
-  {
-    to: '/operator',
-    title: '相似:運算子的矩陣表示',
-    desc: '同一個運算子,換把尺就換個矩陣 [T]_B = B⁻¹AB。拖基底看 [T]_B 的四格變、但平行四邊形面積(det)鎖死不動 —— 相似矩陣共享 det,描述變了運算子沒變。',
-  },
-  {
-    to: '/eigenvalues',
-    title: '特徵值與特徵向量',
-    desc: '拖 λ 滑桿,看 A − λI 把單位方塊壓成的平行四邊形;det(A − λI) 滑到 0 時塌成一條線 —— 那一刻 λ 是特徵值,被壓到原點的方向就是特徵向量(A·v = λv)。',
-  },
-  {
-    to: '/composition',
-    title: '合成與可逆性',
-    desc: '拖 x 看「先 T 再 U」兩步路徑與「一步 BA」直達永遠會合(T_B ∘ T_A = T_BA);切到逆轉換模式看「變形 → 復原」,Summary Table 三燈由 core 點亮。',
-  },
-  {
-    to: '/span',
-    title: '張成 Span',
-    desc: '兩個向量能「張成」多大的空間?拖到共線的瞬間,平面塌縮成一條線。',
-  },
-  {
-    to: '/multiply',
-    title: '矩陣乘法',
-    desc: '任意尺寸 (m×n)·(n×p) 的 row × col 互動展開:點 C 的任一格看它由哪一列點積哪一欄,並親手碰到「維度不合不能乘」。',
-  },
-  {
-    to: '/elimination',
-    title: '高斯消去',
-    desc: '逐步播放 forward / backward 消去,看矩陣化成 RREF,並判讀唯一解、無限多解或無解。',
-  },
-  {
-    to: '/invertibility',
-    title: '可逆矩陣',
-    desc: 'Gauss-Jordan 累乘基本矩陣求 A⁻¹,並以 2D 變換看每個列運算的幾何意義(鏡射、伸縮、剪切)。',
-  },
-  {
-    to: '/determinant',
     title: '行列式',
-    desc: '拖 î′、ĵ′ 看單位正方形的像:|det| = 面積縮放、det < 0 = 翻面;切到 3×3 / 4×4 看 det 推廣為(超)體積,det 路與 rank 路對帳 Theorem 3.4(a)。',
+    sub: 'Essence Ep.6 — 一個數字說完變換對面積做了什麼。',
+    items: [
+      {
+        to: '/determinant',
+        title: '行列式',
+        desc: '拖 î′、ĵ′ 看單位正方形的像:|det| = 面積縮放、det < 0 = 翻面;切到 3×3 / 4×4 看 det 推廣為(超)體積,det 路與 rank 路對帳 Theorem 3.4(a)。',
+      },
+    ],
+  },
+  {
+    title: '逆矩陣、秩與零空間',
+    sub: 'Essence Ep.7 — 解方程組的幾何:回得去嗎?蓋得滿嗎?誰被壓扁了?',
+    items: [
+      {
+        to: '/elimination',
+        title: '高斯消去',
+        desc: '逐步播放 forward / backward 消去,看矩陣化成 RREF,並判讀唯一解、無限多解或無解。',
+      },
+      {
+        to: '/invertibility',
+        title: '可逆矩陣',
+        desc: 'Gauss-Jordan 累乘基本矩陣求 A⁻¹,並以 2D 變換看每個列運算的幾何意義(鏡射、伸縮、剪切)。',
+      },
+      {
+        to: '/range',
+        title: '值域與映成',
+        desc: '拖動矩陣的行向量,看 Range(T) = Col(A) 從整個平面塌成直線;拖 w 問「到得了嗎?」—— 可達性與映成判定由 core 即時計算。',
+      },
+      {
+        to: '/nullspace',
+        title: '零空間與 rank-nullity',
+        desc: '/range 的對偶:拖輸入 v 看它的像 Av,落到核線上時被壓到原點;nullity 與 rank 各自由 core 算,相加 = 2 當場驗證 rank-nullity 定理。',
+      },
+      {
+        to: '/rank',
+        title: '行秩 = 列秩',
+        desc: 'Row A(domain)與 Col A(codomain)是不同空間的不同子空間,維度卻永遠相等。拖列向量或行向量,看兩邊的維度同進同退 —— rank(A) = rank(Aᵀ) 看得見。',
+      },
+    ],
+  },
+  {
+    title: '基底變換與相似',
+    sub: 'Essence Ep.13 — 換一把尺量同一個世界,矩陣跟著換臉。',
+    items: [
+      {
+        to: '/coordinates',
+        title: '座標系統',
+        desc: '同一個點,換一組基底就有不同座標。拖斜格的 b₁、b₂ 換尺、拖 x 移點,看 [x]_B = (c₁, c₂) 即時變化 —— 座標是「沿 b₁、b₂ 各走幾步」的權重,由 core 解 B⁻¹x。',
+      },
+      {
+        to: '/operator',
+        title: '相似:運算子的矩陣表示',
+        desc: '同一個運算子,換把尺就換個矩陣 [T]_B = B⁻¹AB。拖基底看 [T]_B 的四格變、但平行四邊形面積(det)鎖死不動 —— 相似矩陣共享 det,描述變了運算子沒變。',
+      },
+    ],
+  },
+  {
+    title: '特徵值與特徵向量',
+    sub: 'Essence Ep.14 — 變換翻天覆地,總有些方向只被伸縮、不被轉向。',
+    items: [
+      {
+        to: '/eigenvalues',
+        title: '特徵值與特徵向量',
+        desc: '拖 λ 滑桿,看 A − λI 把單位方塊壓成的平行四邊形;det(A − λI) 滑到 0 時塌成一條線 —— 那一刻 λ 是特徵值,被壓到原點的方向就是特徵向量(A·v = λv)。',
+      },
+    ],
   },
 ] as const
 
@@ -104,24 +148,33 @@ function Home() {
         </h1>
         <p className="text-slate-400">
           Rust 手刻線性代數 library 的互動圖解 —— 所有計算由 Rust(WASM)完成,JS 只負責畫圖與互動。
+          章節照 3Blue1Brown《Essence of Linear Algebra》的敘事走;你調好的矩陣會寫進網址,
+          帶著同一顆矩陣逛完每一頁。
         </p>
       </div>
 
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-slate-100">互動圖解</h2>
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {FEATURES.map(({ to, title, desc }) => (
-            <li key={to}>
-              <Link
-                to={to}
-                className="block h-full rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3 transition hover:border-violet-500/60 hover:bg-slate-900"
-              >
-                <p className="font-medium text-violet-300">{title} →</p>
-                <p className="mt-1 text-sm text-slate-400">{desc}</p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      <div className="space-y-8">
+        {SECTIONS.map(({ title, sub, items }) => (
+          <div key={title} className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
+              <p className="text-xs text-slate-500">{sub}</p>
+            </div>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {items.map(({ to, title: cardTitle, desc }) => (
+                <li key={to}>
+                  <Link
+                    to={to}
+                    className="block h-full rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3 transition hover:border-violet-500/60 hover:bg-slate-900"
+                  >
+                    <p className="font-medium text-violet-300">{cardTitle} →</p>
+                    <p className="mt-1 text-sm text-slate-400">{desc}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
 
       <div className="space-y-4">
