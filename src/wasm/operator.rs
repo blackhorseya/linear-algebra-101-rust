@@ -8,7 +8,8 @@
 //! det 不在這裡算:前端對 `[T]_B` 與 A 各呼一次既有的 `determinant` binding 當場對帳,
 //! 「相似 ⟹ 同 det」是兩條獨立計算的結果,不是 JS 寫死的假設(沿 determinant 章三燈精神)。
 
-use super::helpers::{TRACE_EPSILON, flatten};
+use super::coordinates::basis_columns;
+use super::helpers::{TRACE_EPSILON, flatten, matrix_n};
 use crate::{Matrix, Vector, b_matrix};
 use wasm_bindgen::prelude::*;
 
@@ -31,6 +32,22 @@ pub fn b_matrix_2d(a: Vec<f64>, b1x: f64, b1y: f64, b2x: f64, b2y: f64) -> Vec<f
     b_matrix(
         TRACE_EPSILON,
         |v| a.multiply_vector(v).expect("2×2 作用於 ℝ²"),
+        &basis,
+    )
+    .map(|m| flatten(&m))
+    .unwrap_or_default()
+}
+
+/// [`b_matrix_2d`] 的 n×n 通用版(計算機軌道):`a` 為 row-major n×n 的運算子,
+/// `basis_data` 為 row-major n×n、其**行**為基底向量(沿 `coordinates_n`)。
+/// 回 row-major flatten 的 [T]_B;基底退化回 `[]`。
+#[wasm_bindgen]
+pub fn b_matrix_n(a: Vec<f64>, n: usize, basis_data: Vec<f64>) -> Vec<f64> {
+    let a = matrix_n(&a, n);
+    let basis = basis_columns(&basis_data, n);
+    b_matrix(
+        TRACE_EPSILON,
+        |v| a.multiply_vector(v).expect("n×n 作用於 ℝⁿ"),
         &basis,
     )
     .map(|m| flatten(&m))
@@ -71,5 +88,13 @@ mod tests {
     #[test]
     fn b_matrix_2d_degenerate_basis_is_empty() {
         assert!(b_matrix_2d(vec![1.0, 0.0, 0.0, 1.0], 1.0, 1.0, 2.0, 2.0).is_empty());
+    }
+
+    /// n×n 通用版:標準基底(I₃ 的行)下 [T]_E = A —— 直接讀回 3×3 的九格。
+    #[test]
+    fn b_matrix_n_standard_basis_is_the_operator() {
+        let a = vec![1.0, 2.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 2.0];
+        let i3 = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert_eq!(b_matrix_n(a.clone(), 3, i3), a);
     }
 }

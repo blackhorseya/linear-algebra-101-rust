@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { RankCanvas } from '../components/RankCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/rank')({
@@ -46,8 +49,18 @@ function RankDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:數字輸入框、preset、兩個面板的拖曳共用這份 state。
-  // 預設 rank 1 —— 一進來就看到「Row A 與 Col A 是不同的線,維度卻相等」。
-  const [matrix, setMatrix] = useState<Matrix2x2>(PRESETS[0].m)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2;沒有才用預設 rank 1 ——
+  // 一進來就看到「Row A 與 Col A 是不同的線,維度卻相等」。
+  const { initial, publish } = useSharedMatrix()
+  const [matrix, setMatrix] = useState<Matrix2x2>(
+    () => toMatrix2x2(initial) ?? PRESETS[0].m,
+  )
+
+  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享。
+  const applyMatrix = (next: Matrix2x2) => {
+    setMatrix(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -80,6 +93,7 @@ function RankDemo() {
           維度由 Rust core 的 <code className="text-slate-300">rank</code> /{' '}
           <code className="text-slate-300">rank_transpose</code> 各自獨立算。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* Preset:三種秩 */}
@@ -89,7 +103,7 @@ function RankDemo() {
             <button
               key={p.name}
               type="button"
-              onClick={() => setMatrix(p.m)}
+              onClick={() => applyMatrix(p.m)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 transition hover:border-violet-500/60 hover:text-violet-200"
             >
               {p.name}
@@ -103,29 +117,29 @@ function RankDemo() {
             <NumberField
               label="a"
               value={a}
-              onChange={(x) => setMatrix({ ...matrix, a: x })}
+              onChange={(x) => applyMatrix({ ...matrix, a: x })}
             />
             <NumberField
               label="b"
               value={b}
-              onChange={(x) => setMatrix({ ...matrix, b: x })}
+              onChange={(x) => applyMatrix({ ...matrix, b: x })}
             />
             <NumberField
               label="c"
               value={c}
-              onChange={(x) => setMatrix({ ...matrix, c: x })}
+              onChange={(x) => applyMatrix({ ...matrix, c: x })}
             />
             <NumberField
               label="d"
               value={d}
-              onChange={(x) => setMatrix({ ...matrix, d: x })}
+              onChange={(x) => applyMatrix({ ...matrix, d: x })}
             />
           </div>
         </div>
       </div>
 
       <div className="space-y-3">
-        <RankCanvas linalg={linalg} m={matrix} onChangeM={setMatrix} />
+        <RankCanvas linalg={linalg} m={matrix} onChangeM={applyMatrix} />
         <p className="text-xs text-slate-500">
           左面板拖<span className="text-sky-400">列向量 r₁、r₂</span>(= A 的兩列),
           右面板拖<span className="text-amber-400">行向量 a₁、a₂</span>(= A 的兩行)——

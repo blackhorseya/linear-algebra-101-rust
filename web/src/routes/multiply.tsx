@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { Status } from '../components/ui'
 import { fmt } from '../lib/format'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 
 export const Route = createFileRoute('/multiply')({
   component: MultiplyDemo,
@@ -51,8 +52,12 @@ function MultiplyDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:只存兩個 grid,尺寸從資料導出(沿 core「維度從資料導出,不另存」)。
-  const [aGrid, setAGrid] = useState<number[][]>(DEFAULT_A)
-  const [bGrid, setBGrid] = useState<number[][]>(DEFAULT_B)
+  // 共享優先:A 接共享方陣;B 對齊列數,確保 (n×n)·(n×2) 開頁即相容。
+  const { initial, publish } = useSharedMatrix()
+  const [aGrid, setAGrid] = useState<number[][]>(() => initial ?? DEFAULT_A)
+  const [bGrid, setBGrid] = useState<number[][]>(() =>
+    initial ? resizeGrid(DEFAULT_B, initial.length, DEFAULT_B[0].length) : DEFAULT_B,
+  )
   // 選中 C 的哪一格(展開它的 dot product)。尺寸縮小時在下方 clamp,不另作重設。
   const [sel, setSel] = useState({ i: 0, j: 0 })
 
@@ -82,17 +87,27 @@ function MultiplyDemo() {
   const selI = Math.min(sel.i, aRows - 1)
   const selJ = Math.min(sel.j, bCols - 1)
 
-  const setCell =
-    (setGrid: typeof setAGrid) => (r: number, c: number, value: number) =>
-      setGrid((g) =>
-        g.map((row, ri) =>
-          ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row,
-        ),
-      )
+  // A 所有寫路徑的唯一出口:本地更新後,只在 A 仍是 2..4 方陣時寫回共享
+  // (共享矩陣的正規型別是方陣;A 被調成矩形時 URL 保留最後一顆方陣)。
+  const applyA = (next: number[][]) => {
+    setAGrid(next)
+    const nr = next.length
+    if (nr >= 2 && nr <= 4 && next.every((row) => row.length === nr)) {
+      publish(next)
+    }
+  }
+  const patchCell = (g: number[][], r: number, c: number, value: number) =>
+    g.map((row, ri) =>
+      ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row,
+    )
+  const setCellA = (r: number, c: number, value: number) =>
+    applyA(patchCell(aGrid, r, c, value))
+  const setCellB = (r: number, c: number, value: number) =>
+    setBGrid((g) => patchCell(g, r, c, value))
   // 用小整數(−9…9)隨機重填兩個矩陣:數字小,展開式才讀得動。
   const randomize = () => {
     const rand = () => Math.floor(Math.random() * 19) - 9
-    setAGrid((g) => g.map((row) => row.map(rand)))
+    applyA(aGrid.map((row) => row.map(rand)))
     setBGrid((g) => g.map((row) => row.map(rand)))
   }
 
@@ -116,7 +131,7 @@ function MultiplyDemo() {
           name="A"
           rows={aRows}
           cols={aCols}
-          onResize={(r, c) => setAGrid((g) => resizeGrid(g, r, c))}
+          onResize={(r, c) => applyA(resizeGrid(aGrid, r, c))}
         />
         <DimSteppers
           name="B"
@@ -136,7 +151,7 @@ function MultiplyDemo() {
         <MatrixBlock label={`A(${aRows}×${aCols})`}>
           <EditableMatrix
             grid={aGrid}
-            onCell={setCell(setAGrid)}
+            onCell={setCellA}
             highlightClass={(r) =>
               compatible && r === selI ? A_HIGHLIGHT : ''
             }
@@ -148,7 +163,7 @@ function MultiplyDemo() {
         <MatrixBlock label={`B(${bRows}×${bCols})`}>
           <EditableMatrix
             grid={bGrid}
-            onCell={setCell(setBGrid)}
+            onCell={setCellB}
             highlightClass={(_r, c) =>
               compatible && c === selJ ? B_HIGHLIGHT : ''
             }

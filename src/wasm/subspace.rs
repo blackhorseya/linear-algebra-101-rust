@@ -8,8 +8,8 @@
 //! 由 core 獨立算**,相加 = 2 是當場對帳,不是前端推導。
 //! epsilon 一律寫死 `TRACE_EPSILON`(沿 range 章:拖曳座標數量級穩定)。
 
-use super::helpers::{TRACE_EPSILON, transformation_2x2};
-use crate::Vector;
+use super::helpers::{TRACE_EPSILON, flatten_vectors, matrix_n, transformation_2x2};
+use crate::{Transformation, Vector};
 use wasm_bindgen::prelude::*;
 
 /// `v ∈ Null A`?直接委派 core 的 `null_space_contains`(v ∈ Null A ⟺ Av ≈ 0)——
@@ -62,6 +62,21 @@ pub fn rank_transpose(a: f64, b: f64, c: f64, d: f64) -> usize {
         .matrix()
         .transpose()
         .rank(TRACE_EPSILON)
+}
+
+/// [`row_space_basis`] 的 n×n 通用版(計算機軌道):`data` 為 row-major flatten,
+/// 回 RREF 非零列攤平串接 —— 支數 = 總長 ÷ n = dim Row A。
+#[wasm_bindgen]
+pub fn row_space_basis_n(data: Vec<f64>, n: usize) -> Vec<f64> {
+    flatten_vectors(&Transformation::new(matrix_n(&data, n)).row_space_basis(TRACE_EPSILON))
+}
+
+/// Null A 基底的 n×n 版(core 的 `null_space_basis`,計算機軌道):自由變數逐一
+/// 設 1 回代的核基底,攤平串接 —— 支數 = 總長 ÷ n = nullity。2×2 視覺化頁走
+/// `eigenspace_basis_2d(λ=0)` 同一條 core 路徑;這裡直呼,語意更直接。
+#[wasm_bindgen]
+pub fn null_space_basis_n(data: Vec<f64>, n: usize) -> Vec<f64> {
+    flatten_vectors(&Transformation::new(matrix_n(&data, n)).null_space_basis(TRACE_EPSILON))
 }
 
 #[cfg(test)]
@@ -168,5 +183,18 @@ mod tests {
                 "rank(A) ≠ rank(Aᵀ)"
             );
         }
+    }
+
+    /// n×n 通用版的 rank-nullity:3×3 rank-2 → Row 基底 2 支 + Null 基底 1 支,
+    /// 支數相加 = 3(domain 維度)—— 兩條獨立計算當場對帳,同 2×2 面板精神。
+    #[test]
+    fn row_and_null_basis_n_satisfy_rank_nullity_on_3x3() {
+        // 第三列 = 第一列 + 第二列 → rank 2、nullity 1。
+        let m = vec![1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0];
+        let row = row_space_basis_n(m.clone(), 3);
+        let null = null_space_basis_n(m, 3);
+        assert_eq!(row.len() / 3, 2, "dim Row A = 2");
+        assert_eq!(null.len() / 3, 1, "nullity = 1");
+        assert_eq!(row.len() / 3 + null.len() / 3, 3, "rank + nullity = n");
     }
 }

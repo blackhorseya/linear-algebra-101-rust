@@ -1,5 +1,5 @@
 // 線性運算子的矩陣表示(/operator)的 binding —— 鏡像 src/wasm/operator.rs。
-import { b_matrix_2d } from "../wasm/linear_algebra_101.js";
+import { b_matrix_2d, b_matrix_n } from "../wasm/linear_algebra_101.js";
 
 /** operator 章的運算(攤平進 `Linalg`)。 */
 export interface OperatorOps {
@@ -15,9 +15,16 @@ export interface OperatorOps {
     b2x: number,
     b2y: number,
   ) => Float64Array;
+  /**
+   * `bMatrix2d` 的 n×n 通用版(計算機):`basisData` 為 row-major n×n、其**行**為
+   * 基底向量(沿 `coordinatesN`);回 row-major flatten 的 [T]_B,基底退化回空陣列。
+   */
+  bMatrixN: (a: number[], n: number, basisData: number[]) => Float64Array;
 }
 
 export const operatorOps: OperatorOps = {
   bMatrix2d: (a, b1x, b1y, b2x, b2y) =>
     b_matrix_2d(Float64Array.from(a), b1x, b1y, b2x, b2y),
+  bMatrixN: (a, n, basisData) =>
+    b_matrix_n(Float64Array.from(a), n, Float64Array.from(basisData)),
 };

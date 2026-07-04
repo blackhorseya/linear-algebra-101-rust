@@ -7,6 +7,7 @@ import { EditableGrid, SizeToggle } from '../components/MatrixGrid'
 import { resizeGrid, type Size } from '../lib/grid'
 import { Row, Status } from '../components/ui'
 import { fmt } from '../lib/format'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/determinant')({
@@ -57,8 +58,10 @@ function DeterminantDemo() {
     error,
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
-  const [n, setN] = useState<Size>(2)
-  const [grid, setGrid] = useState<number[][]>(DEFAULT_GRIDS[2])
+  // 共享優先:本頁擁有完整 n×n,尺寸與內容都從共享矩陣還原;沒有才用預設。
+  const { initial, publish } = useSharedMatrix()
+  const [n, setN] = useState<Size>(() => (initial?.length as Size) ?? 2)
+  const [grid, setGrid] = useState<number[][]>(() => initial ?? DEFAULT_GRIDS[2])
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -72,21 +75,28 @@ function DeterminantDemo() {
   const agree = detNonzero === invertible // 定理保證恆 true
 
   // --- 互動 ---
+  // 所有寫路徑的唯一出口:本地更新 + 整顆寫回共享。就地算 next 再 apply,
+  // 不走 functional updater —— publish 是副作用,放進 updater 會被
+  // StrictMode 的 double-invoke 寫兩次。
+  const applyGrid = (next: number[][]) => {
+    setGrid(next)
+    publish(next)
+  }
   const setCell = (r: number, c: number, value: number) =>
-    setGrid((g) =>
-      g.map((row, ri) =>
+    applyGrid(
+      grid.map((row, ri) =>
         ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row,
       ),
     )
   const changeSize = (next: Size) => {
     setN(next)
-    setGrid((g) => resizeGrid(g, next))
+    applyGrid(resizeGrid(grid, next))
   }
-  const reset = () => setGrid(DEFAULT_GRIDS[n].map((row) => [...row]))
+  const reset = () => applyGrid(DEFAULT_GRIDS[n].map((row) => [...row]))
   // 小整數(−5…5)隨機重填,det 仍是好讀的整數。
   const randomize = () =>
-    setGrid((g) =>
-      g.map((row) => row.map(() => Math.floor(Math.random() * 11) - 5)),
+    applyGrid(
+      grid.map((row) => row.map(() => Math.floor(Math.random() * 11) - 5)),
     )
 
   // 2×2 時 canvas 與輸入網格共用同一份 grid(單一真相);拖曳寫回 grid。
@@ -97,7 +107,7 @@ function DeterminantDemo() {
     d: grid[1][1],
   }
   const setM = (next: Matrix2x2) =>
-    setGrid([
+    applyGrid([
       [next.a, next.b],
       [next.c, next.d],
     ])

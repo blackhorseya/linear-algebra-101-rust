@@ -1,11 +1,13 @@
 // 子空間視覺化的 binding —— 鏡像 src/wasm/subspace.rs。服務 /nullspace(Null A)
 // 與 /rank(Row A / Col A 維度對偶)兩頁。
 import {
+  null_space_basis_n,
   null_space_contains,
   nullity,
   rank,
   rank_transpose,
   row_space_basis,
+  row_space_basis_n,
 } from "../wasm/linear_algebra_101.js";
 
 /** subspace 章的運算(攤平進 `Linalg`)。 */
@@ -37,6 +39,10 @@ export interface SubspaceOps {
    * 即定理 rank(A) = rank(Aᵀ);前端把兩個獨立計算的數並列當場對帳。
    */
   rankTranspose: (a: number, b: number, c: number, d: number) => number;
+  /** `rowSpaceBasis` 的 n×n 通用版(計算機):支數 = 總長 ÷ n = dim Row A。 */
+  rowSpaceBasisN: (data: number[], n: number) => Float64Array;
+  /** Null A 基底的 n×n 版(core 的 `null_space_basis`):支數 = 總長 ÷ n = nullity。 */
+  nullSpaceBasisN: (data: number[], n: number) => Float64Array;
 }
 
 export const subspaceOps: SubspaceOps = {
@@ -45,4 +51,6 @@ export const subspaceOps: SubspaceOps = {
   rank,
   rowSpaceBasis: row_space_basis,
   rankTranspose: rank_transpose,
+  rowSpaceBasisN: (data, n) => row_space_basis_n(Float64Array.from(data), n),
+  nullSpaceBasisN: (data, n) => null_space_basis_n(Float64Array.from(data), n),
 };

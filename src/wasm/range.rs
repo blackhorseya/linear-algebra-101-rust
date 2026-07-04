@@ -8,8 +8,8 @@
 //! 「只有積木接線」精神原樣延伸到邊界層)。
 //! epsilon 一律寫死 TRACE_EPSILON(沿 eliminate 慣例:拖曳座標數量級穩定)。
 
-use super::helpers::{TRACE_EPSILON, transformation_2x2};
-use crate::{Matrix, Solution, System, Vector};
+use super::helpers::{TRACE_EPSILON, flatten_vectors, matrix_n, transformation_2x2};
+use crate::{Matrix, Solution, System, Transformation, Vector};
 use wasm_bindgen::prelude::*;
 
 /// Range(T) 的基底(core 的 `range_basis`),行向量攤平串接回傳:
@@ -22,6 +22,14 @@ pub fn range_basis(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
         .iter()
         .flat_map(|v| v.entries().iter().copied())
         .collect()
+}
+
+/// [`range_basis`] 的 n×n 通用版(計算機軌道):`data` 為 row-major flatten。
+/// 回傳同樣是行向量攤平串接 —— 支數 = 總長 ÷ n = rank。core 的 `Transformation`
+/// 本就收任意矩陣;2×2 是視覺化頁畫布的形狀限制,不是計算的。
+#[wasm_bindgen]
+pub fn range_basis_n(data: Vec<f64>, n: usize) -> Vec<f64> {
+    flatten_vectors(&Transformation::new(matrix_n(&data, n)).range_basis(TRACE_EPSILON))
 }
 
 /// `w ∈ Range(T)`?直接委派 core 的 `range_contains`(w 可達 ⟺ Ax = w 相容)——
@@ -140,5 +148,19 @@ mod tests {
                 "可達 ⟺ 有解"
             );
         }
+    }
+
+    /// n×n 通用版:3×3 rank-1(每列都是第一列的倍數)→ 基底 1 支、長度 3;
+    /// 且與 2×2 版在同一顆矩陣上答案一致(通用版涵蓋特化版)。
+    #[test]
+    fn range_basis_n_handles_3x3_and_agrees_with_2x2() {
+        let rank1 = vec![1.0, 2.0, 3.0, 2.0, 4.0, 6.0, 3.0, 6.0, 9.0];
+        assert_eq!(range_basis_n(rank1, 3).len(), 3, "rank 1 → 一支 ℝ³ 基底");
+
+        let m = [2.0, 1.0, 1.0, 1.0];
+        assert_eq!(
+            range_basis_n(m.to_vec(), 2),
+            range_basis(m[0], m[1], m[2], m[3])
+        );
     }
 }

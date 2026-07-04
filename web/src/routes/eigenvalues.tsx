@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { EigenvaluesCanvas, SNAP_EPSILON } from '../components/EigenvaluesCanvas'
 import { NumberField, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/eigenvalues')({
@@ -58,7 +61,22 @@ function EigenvaluesDemo() {
   const { data: linalg, isLoading, error } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:輸入框、preset、λ 滑桿、canvas 拖曳共用這份 state。
-  const [frame, setFrame] = useState<Frame>(PRESETS[0].frame)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2 當 A(λ 是本頁專屬,不共享)。
+  const { initial, publish } = useSharedMatrix()
+  const [frame, setFrame] = useState<Frame>(() => {
+    const a = toMatrix2x2(initial)
+    return a ? { ...PRESETS[0].frame, a } : PRESETS[0].frame
+  })
+
+  // 只有動到 A 的路徑才寫回共享;λ 滑桿照走 setFrame(拖 λ 不狂寫同一顆 m)。
+  const applyA = (a: Matrix2x2) => {
+    setFrame((f) => ({ ...f, a }))
+    publish(patchTopLeft(initial, a))
+  }
+  const applyPreset = (p: Frame) => {
+    setFrame(p)
+    publish(patchTopLeft(initial, p.a))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -96,6 +114,7 @@ function EigenvaluesDemo() {
           <span className="text-amber-400">î′</span> / <span className="text-orange-400">ĵ′</span>{' '}
           改 A 本身。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* Preset */}
@@ -105,7 +124,7 @@ function EigenvaluesDemo() {
             <button
               key={p.name}
               type="button"
-              onClick={() => setFrame(p.frame)}
+              onClick={() => applyPreset(p.frame)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 transition hover:border-sky-500/60 hover:text-sky-200"
             >
               {p.name}
@@ -117,10 +136,10 @@ function EigenvaluesDemo() {
           <div className="space-y-1">
             <span className="text-xs text-amber-400">運算子 A(行 = î′ / ĵ′)</span>
             <div className="flex gap-2">
-              <NumberField label="a₁₁" value={a.a} onChange={(v) => setFrame({ ...frame, a: { ...a, a: v } })} />
-              <NumberField label="a₁₂" value={a.b} onChange={(v) => setFrame({ ...frame, a: { ...a, b: v } })} />
-              <NumberField label="a₂₁" value={a.c} onChange={(v) => setFrame({ ...frame, a: { ...a, c: v } })} />
-              <NumberField label="a₂₂" value={a.d} onChange={(v) => setFrame({ ...frame, a: { ...a, d: v } })} />
+              <NumberField label="a₁₁" value={a.a} onChange={(v) => applyA({ ...a, a: v })} />
+              <NumberField label="a₁₂" value={a.b} onChange={(v) => applyA({ ...a, b: v })} />
+              <NumberField label="a₂₁" value={a.c} onChange={(v) => applyA({ ...a, c: v })} />
+              <NumberField label="a₂₂" value={a.d} onChange={(v) => applyA({ ...a, d: v })} />
             </div>
           </div>
           <NumberField label="λ" value={lambda} onChange={(v) => setFrame({ ...frame, lambda: v })} />
@@ -148,7 +167,7 @@ function EigenvaluesDemo() {
           linalg={linalg}
           a={a}
           lambda={lambda}
-          onChangeA={(mat) => setFrame({ ...frame, a: mat })}
+          onChangeA={applyA}
         />
         <p className="text-xs text-slate-500">
           灰虛框 = 原始單位方塊;

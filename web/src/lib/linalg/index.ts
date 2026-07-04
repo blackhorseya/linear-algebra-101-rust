@@ -22,6 +22,7 @@ import { transformOps, type TransformOps } from "./transform";
 
 // 各章的公開型別一律從本檔 re-export,呼叫端只認 '../lib/linalg' 一個路徑。
 export type { TransformationReportJS } from "./composition";
+export type { EigenReportJS } from "./eigen";
 export type {
   ElimPhase,
   EliminationStepJS,

@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { TransformCanvas } from '../components/TransformCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/transform')({
@@ -21,9 +24,18 @@ function TransformDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:數字輸入框與 Canvas 共用這份 m / v(Canvas 全 controlled)。
-  // 預設 90° 逆時針旋轉作用在 (1,1)。
-  const [m, setM] = useState<Matrix2x2>({ a: 0, b: -1, c: 1, d: 0 })
+  // 共享優先:URL 有共享矩陣就採其左上 2×2;沒有才用預設的 90° 逆時針旋轉。
+  const { initial, publish } = useSharedMatrix()
+  const [m, setM] = useState<Matrix2x2>(
+    () => toMatrix2x2(initial) ?? { a: 0, b: -1, c: 1, d: 0 },
+  )
   const [v, setV] = useState<Vec2>({ x: 1, y: 1 })
+
+  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享(v 不共享)。
+  const applyM = (next: Matrix2x2) => {
+    setM(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -57,6 +69,7 @@ function TransformDemo() {
         <p className="text-sm text-slate-400">
           矩陣與向量運算全部由 Rust(WASM)計算,JS 只負責畫圖與互動。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       <div className="space-y-3">
@@ -64,7 +77,7 @@ function TransformDemo() {
           linalg={linalg}
           m={m}
           v={v}
-          onChangeMatrix={setM}
+          onChangeMatrix={applyM}
           onChangeV={setV}
         />
         <p className="text-xs text-slate-500">
@@ -83,10 +96,10 @@ function TransformDemo() {
             變換矩陣 A
           </legend>
           <div className="grid w-fit grid-cols-2 gap-2">
-            <NumberField label="a" value={m.a} onChange={(a) => setM({ ...m, a })} />
-            <NumberField label="b" value={m.b} onChange={(b) => setM({ ...m, b })} />
-            <NumberField label="c" value={m.c} onChange={(c) => setM({ ...m, c })} />
-            <NumberField label="d" value={m.d} onChange={(d) => setM({ ...m, d })} />
+            <NumberField label="a" value={m.a} onChange={(a) => applyM({ ...m, a })} />
+            <NumberField label="b" value={m.b} onChange={(b) => applyM({ ...m, b })} />
+            <NumberField label="c" value={m.c} onChange={(c) => applyM({ ...m, c })} />
+            <NumberField label="d" value={m.d} onChange={(d) => applyM({ ...m, d })} />
           </div>
         </fieldset>
 

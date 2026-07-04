@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { NullSpaceCanvas } from '../components/NullSpaceCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/nullspace')({
@@ -45,9 +48,19 @@ function NullSpaceDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:數字輸入框、preset 按鈕、Canvas 拖曳共用這份 state。
-  // 預設 rank 1 配核方向上的 v —— 一進來就看到「v 在核裡、Av 塌到原點」。
-  const [matrix, setMatrix] = useState<Matrix2x2>(PRESETS[1].m)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2;沒有才用預設 rank 1 配核方向
+  // 上的 v —— 一進來就看到「v 在核裡、Av 塌到原點」。
+  const { initial, publish } = useSharedMatrix()
+  const [matrix, setMatrix] = useState<Matrix2x2>(
+    () => toMatrix2x2(initial) ?? PRESETS[1].m,
+  )
   const [v, setV] = useState<Vec2>({ x: 2, y: -1 })
+
+  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享(v 不共享)。
+  const applyMatrix = (next: Matrix2x2) => {
+    setMatrix(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -77,6 +90,7 @@ function NullSpaceDemo() {
           —— 是否在核裡由 Rust core 的{' '}
           <code className="text-slate-300">null_space_contains</code> 當場判定。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* Preset:三種秩的代表(與 /range 對偶) */}
@@ -86,7 +100,7 @@ function NullSpaceDemo() {
             <button
               key={p.name}
               type="button"
-              onClick={() => setMatrix(p.m)}
+              onClick={() => applyMatrix(p.m)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 transition hover:border-violet-500/60 hover:text-violet-200"
             >
               {p.name}
@@ -100,22 +114,22 @@ function NullSpaceDemo() {
             <NumberField
               label="a"
               value={a}
-              onChange={(x) => setMatrix({ ...matrix, a: x })}
+              onChange={(x) => applyMatrix({ ...matrix, a: x })}
             />
             <NumberField
               label="b"
               value={b}
-              onChange={(x) => setMatrix({ ...matrix, b: x })}
+              onChange={(x) => applyMatrix({ ...matrix, b: x })}
             />
             <NumberField
               label="c"
               value={c}
-              onChange={(x) => setMatrix({ ...matrix, c: x })}
+              onChange={(x) => applyMatrix({ ...matrix, c: x })}
             />
             <NumberField
               label="d"
               value={d}
-              onChange={(x) => setMatrix({ ...matrix, d: x })}
+              onChange={(x) => applyMatrix({ ...matrix, d: x })}
             />
           </div>
         </div>

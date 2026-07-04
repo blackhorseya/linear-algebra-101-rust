@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { LinearityCanvas, type LinearityMode } from '../components/LinearityCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/linearity')({
@@ -65,11 +68,19 @@ function LinearityDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:preset 按鈕、矩陣輸入框、Canvas 共用這份 state(Canvas 全 controlled)。
-  const [m, setM] = useState<Matrix2x2>(PRESETS[0].m)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2,沒有才用本頁教學預設。
+  const { initial, publish } = useSharedMatrix()
+  const [m, setM] = useState<Matrix2x2>(() => toMatrix2x2(initial) ?? PRESETS[0].m)
   const [u, setU] = useState<Vec2>({ x: 2, y: 1 })
   const [v, setV] = useState<Vec2>({ x: -1, y: 2 })
   const [k, setK] = useState(2)
   const [mode, setMode] = useState<LinearityMode>('add')
+
+  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享(u/v/k 不共享)。
+  const applyM = (next: Matrix2x2) => {
+    setM(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -102,6 +113,7 @@ function LinearityDemo() {
           矩陣 A 不只是數字表,它是一個函數 T_A: ℝ² → ℝ²,T_A(x) = Ax。拖動向量,
           看 shear / 投影怎麼搬動它的影像 —— 所有計算由 Rust(WASM)完成。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* preset 選擇:單元 5-1 點名的轉換 */}
@@ -111,7 +123,7 @@ function LinearityDemo() {
             <button
               key={p.id}
               type="button"
-              onClick={() => setM(p.m)}
+              onClick={() => applyM(p.m)}
               className={`rounded-md border px-3 py-1.5 text-sm transition ${
                 activePreset?.id === p.id
                   ? 'border-violet-500 bg-violet-500/15 text-violet-200'
@@ -203,10 +215,10 @@ function LinearityDemo() {
           變換矩陣 A(可自訂)
         </legend>
         <div className="grid w-fit grid-cols-2 gap-2">
-          <NumberField label="a" value={m.a} onChange={(a) => setM({ ...m, a })} />
-          <NumberField label="b" value={m.b} onChange={(b) => setM({ ...m, b })} />
-          <NumberField label="c" value={m.c} onChange={(c) => setM({ ...m, c })} />
-          <NumberField label="d" value={m.d} onChange={(d) => setM({ ...m, d })} />
+          <NumberField label="a" value={m.a} onChange={(a) => applyM({ ...m, a })} />
+          <NumberField label="b" value={m.b} onChange={(b) => applyM({ ...m, b })} />
+          <NumberField label="c" value={m.c} onChange={(c) => applyM({ ...m, c })} />
+          <NumberField label="d" value={m.d} onChange={(d) => applyM({ ...m, d })} />
         </div>
       </fieldset>
 

@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { OperatorCanvas } from '../components/OperatorCanvas'
 import { NumberField, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/operator')({
@@ -66,7 +69,22 @@ function OperatorDemo() {
 
   // 單一真相:輸入框、preset、canvas 拖曳共用這份 state。預設「旋轉 90° · 傾斜尺」——
   // 一進來就看到「同一個運算子,斜尺下矩陣不一樣,但 det 不變」。
-  const [frame, setFrame] = useState<Frame>(PRESETS[0].frame)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2 當 A(基底 b₁/b₂ 是本頁專屬,不共享)。
+  const { initial, publish } = useSharedMatrix()
+  const [frame, setFrame] = useState<Frame>(() => {
+    const a = toMatrix2x2(initial)
+    return a ? { ...PRESETS[0].frame, a } : PRESETS[0].frame
+  })
+
+  // 只有動到 A 的路徑才寫回共享;拖基底照走 setFrame(換尺不改矩陣本身)。
+  const applyA = (a: Matrix2x2) => {
+    setFrame((f) => ({ ...f, a }))
+    publish(patchTopLeft(initial, a))
+  }
+  const applyPreset = (p: Frame) => {
+    setFrame(p)
+    publish(patchTopLeft(initial, p.a))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -103,6 +121,7 @@ function OperatorDemo() {
           改 A 本身。<code className="text-slate-300">[T]_B</code> 由 Rust core 的{' '}
           <code className="text-slate-300">b_matrix</code> 計算。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* Preset:四種運算子 × 基底組合 */}
@@ -112,7 +131,7 @@ function OperatorDemo() {
             <button
               key={p.name}
               type="button"
-              onClick={() => setFrame(p.frame)}
+              onClick={() => applyPreset(p.frame)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 transition hover:border-violet-500/60 hover:text-violet-200"
             >
               {p.name}
@@ -124,10 +143,10 @@ function OperatorDemo() {
           <div className="space-y-1">
             <span className="text-xs text-amber-400">運算子 A(行 = î′ / ĵ′)</span>
             <div className="flex gap-2">
-              <NumberField label="a₁₁" value={a.a} onChange={(v) => setFrame({ ...frame, a: { ...a, a: v } })} />
-              <NumberField label="a₁₂" value={a.b} onChange={(v) => setFrame({ ...frame, a: { ...a, b: v } })} />
-              <NumberField label="a₂₁" value={a.c} onChange={(v) => setFrame({ ...frame, a: { ...a, c: v } })} />
-              <NumberField label="a₂₂" value={a.d} onChange={(v) => setFrame({ ...frame, a: { ...a, d: v } })} />
+              <NumberField label="a₁₁" value={a.a} onChange={(v) => applyA({ ...a, a: v })} />
+              <NumberField label="a₁₂" value={a.b} onChange={(v) => applyA({ ...a, b: v })} />
+              <NumberField label="a₂₁" value={a.c} onChange={(v) => applyA({ ...a, c: v })} />
+              <NumberField label="a₂₂" value={a.d} onChange={(v) => applyA({ ...a, d: v })} />
             </div>
           </div>
           <div className="space-y-1">
@@ -153,7 +172,7 @@ function OperatorDemo() {
           a={a}
           b1={b1}
           b2={b2}
-          onChangeA={(m) => setFrame({ ...frame, a: m })}
+          onChangeA={applyA}
           onChangeB1={(v) => setFrame({ ...frame, b1: v })}
           onChangeB2={(v) => setFrame({ ...frame, b2: v })}
         />
