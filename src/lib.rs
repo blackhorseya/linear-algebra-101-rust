@@ -31,8 +31,9 @@ pub use composition::TransformationReport;
 pub use coordinates::{coordinates, from_coordinates};
 pub use diagonal::DiagonalMatrix;
 pub use eigen::{
-    algebraic_multiplicity, characteristic_matrix, eigenspace_basis, has_real_eigenvalues_2x2,
-    is_eigenpair, triangular_eigenvalues,
+    EigenReport, algebraic_multiplicity, analyze_eigen_properties, characteristic_matrix,
+    eigenspace_basis, geometric_multiplicity, has_real_eigenvalues_2x2, is_eigenpair,
+    triangular_eigenvalues,
 };
 pub use error::LinAlgError;
 pub use independence::{

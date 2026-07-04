@@ -1,4 +1,4 @@
-//! 特徵值與特徵向量(Eigenvalues & Eigenvectors)—— 單元 8-1 / 8-2(講義 5.1–5.2 前段)。
+//! 特徵值與特徵向量(Eigenvalues & Eigenvectors)—— 單元 8-1 – 8-3(講義 5.1–5.2)。
 //!
 //! 這是課程進入「進階主題」的第一章。前面所有轉換都把整個空間搬來搬去;這裡問一個
 //! 更尖銳的問題:對一個運算子 T(方陣 A),**哪些非零向量 v 只被「伸縮」、方向不變**?
@@ -51,6 +51,29 @@
 //!   下一單元的對角化判準(代數 vs 幾何重數)是它的下游。
 //! - **練習 6**(90° 旋轉無實根)= 8-1 的 [`has_real_eigenvalues_2x2`],**零新碼** →
 //!   law 對帳兩條判別式:`tr² − 4·det`(係數路)≡ `(a−d)² + 4bc`(8-1 路)。
+//!
+//! ## 單元 8-3:特徵多項式 2/2(講義 5.2 後段)—— 5 題 → 1 新函式 + 1 報告 struct
+//!
+//! 主角是兩種「重數」的張力:**代數重數**(λ 作為特徵多項式根的重疊次數,8-2 已刻)vs
+//! **幾何重數**(`dim Eλ = nullity(A − λI)`,λ 實際提供多少個線性獨立特徵向量),以及
+//! **Theorem 5.1:幾何重數 ≤ 代數重數**。幾何 < 代數的特徵值稱**虧損(deficient)**——
+//! 特徵多項式承諾了 k 份、特徵空間卻交不出 k 個獨立向量,是下一單元「不可對角化」的元凶。
+//!
+//! - **練習 1**(代數重數)= 8-2 的 [`algebraic_multiplicity`],**零新碼**(連原例
+//!   `[−1, 3, 3] → 2` 都是同一題,測試已在)。
+//! - **練習 2** [`geometric_multiplicity`]:計算是舊的(8-1 law
+//!   `eigenspace_dimension_equals_nullity` 早證了 nullity 路 = 基底路),但概念是本單元
+//!   主角、練習 4 與下一單元的對角化判準都是下游 —— 值得一個名字。
+//! - **練習 3**(Theorem 5.1 驗證器)是定理不是計算 → law
+//!   `theorem_5_1_geometric_at_most_algebraic`(三角家族 —— 代數重數可直讀,誠實對應
+//!   repo 尚無一般求根器);外加對照律 `diagonal_matrices_are_never_deficient`
+//!   (對角矩陣幾何 = 代數,預告「對角 ⟹ 可對角化」)。
+//! - **練習 4** [`EigenReport`] / [`analyze_eigen_properties`]:整合報告 —— 沿
+//!   [`TransformationReport`](crate::TransformationReport) 先例(pub 欄位的值物件,
+//!   「報告與獨立計算器一致」是 laws 要證的,不鎖建構子)。
+//! - **練習 5**(複數特徵值偵測)**零新碼**:2×2 有複數特徵值 ⟺ 判別式 < 0 ⟺
+//!   [`has_real_eigenvalues_2x2`] 的**逆否**,8-1 旋轉測試 + 8-2 判別式 law 已全覆蓋,
+//!   再包一層函式只是在 API 裡放一個 `!`。
 //!
 //! 與 `transformation` / `subspace` 同款佈局:本模組碰不到 private 的 `data`,一律走
 //! public API。
@@ -240,6 +263,84 @@ pub fn algebraic_multiplicity(epsilon: f64, eigenvalues: &[f64], lambda: f64) ->
         .iter()
         .filter(|&&ev| (ev - lambda).abs() <= epsilon)
         .count()
+}
+
+// ───────────────────── 單元 8-3:特徵多項式 2/2(講義 5.2 後段) ─────────────────────
+
+/// **練習 2 —— 幾何重數(geometric multiplicity)**:`dim Eλ = nullity(A − λI)`,
+/// λ 實際提供多少個線性獨立的特徵向量。
+///
+/// 與代數重數的張力是本單元主角:代數重數是特徵多項式「承諾」的份數,幾何重數是
+/// 特徵空間「交得出」的獨立向量數。**Theorem 5.1:幾何 ≤ 代數**(law 見證);
+/// 幾何 < 代數的 λ 稱**虧損(deficient)**,是「不可對角化」的元凶(下一單元)。
+///
+/// 非方陣 → [`LinAlgError::NotSquare`](沿 [`characteristic_matrix`] 一路傳上來);
+/// λ 不是特徵值 → `0`(`Eλ = {0}`,維度 0 —— 合法答案,不是錯誤)。
+///
+/// 實作提示 —— 兩條等價路(8-1 law `eigenspace_dimension_equals_nullity` 已證相等),
+/// 挑一條、在 body 裡留一句為什麼:
+/// - **數維度**:[`characteristic_matrix`]`(a, λ)?` 接
+///   [`Matrix::nullity`](crate::Matrix::nullity)`(ε)` —— 只算 rank,不必造出基底;
+/// - **數基底**:[`eigenspace_basis`]`(ε, a, λ)?` 取 `.len()` —— 重用 8-1 全鏈,
+///   多做了「把基底真的造出來」的工。
+pub fn geometric_multiplicity(epsilon: f64, a: &Matrix, lambda: f64) -> Result<usize, LinAlgError> {
+    let m = characteristic_matrix(a, lambda)?;
+    Ok(m.nullity(epsilon))
+}
+
+/// **練習 4 —— 單一特徵值的重數報告**:代數 / 幾何重數並排,虧損與否一眼可判。
+///
+/// 沿 [`TransformationReport`](crate::TransformationReport) 先例:pub 欄位的值物件,
+/// 欄位各自獨立計算 ——「報告與獨立計算器一致」「幾何 ≤ 代數」是 laws 要證的定理,
+/// 不鎖進建構子(鎖了反而蓋掉值得證明的東西)。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EigenReport {
+    /// 特徵值 λ。
+    pub value: f64,
+    /// 代數重數:λ 在特徵多項式根列表中的出現次數(見 [`algebraic_multiplicity`])。
+    pub algebraic: usize,
+    /// 幾何重數:`dim Eλ = nullity(A − λI)`(見 [`geometric_multiplicity`])。
+    pub geometric: usize,
+    /// 虧損(deficient):幾何 < 代數 —— λ 交不出足額的獨立特徵向量;
+    /// 下一單元將看到:**任何一個 λ 虧損 ⟹ A 不可對角化**。
+    pub is_deficient: bool,
+}
+
+/// **練習 4 —— 特徵值性質綜合報告**:對 `eigenvalues`(特徵多項式的根,**含重複**,
+/// 如 [`triangular_eigenvalues`] 的輸出)裡每個**相異**特徵值產出一份 [`EigenReport`]。
+///
+/// 設計約定:
+/// - **每個相異 λ 恰一份報告**(重根合併 —— 重複的資訊已收進 `algebraic` 欄位),
+///   順序照**首次出現**;「相異」用量值 ≤ `epsilon` 判(與 [`algebraic_multiplicity`]
+///   同一把尺)。
+/// - 非方陣 → [`LinAlgError::NotSquare`](幾何重數那條路傳上來);空列表 → 空報告。
+///
+/// 實作提示:走訪 `eigenvalues`,拿「已出報告的 λ」清單跳過容差內重複(`Vec<f64>` +
+/// `iter().any(…)` 即可);每個新 λ 各叫一次 [`algebraic_multiplicity`] 與
+/// [`geometric_multiplicity`](`?` 傳播錯誤),`is_deficient` 就是 `幾何 < 代數`,
+/// struct literal 收尾。
+pub fn analyze_eigen_properties(
+    epsilon: f64,
+    a: &Matrix,
+    eigenvalues: &[f64],
+) -> Result<Vec<EigenReport>, LinAlgError> {
+    // 型別註記必要:下方 `r.value` 的欄位存取先於 push,推斷走不到那裡。
+    let mut reports: Vec<EigenReport> = Vec::new();
+    for &lambda in eigenvalues {
+        if reports.iter().any(|r| (r.value - lambda).abs() <= epsilon) {
+            continue; // 已有報告,跳過
+        }
+        let algebraic = algebraic_multiplicity(epsilon, eigenvalues, lambda);
+        let geometric = geometric_multiplicity(epsilon, a, lambda)?;
+        let is_deficient = geometric < algebraic;
+        reports.push(EigenReport {
+            value: lambda,
+            algebraic,
+            geometric,
+            is_deficient,
+        });
+    }
+    Ok(reports)
 }
 
 #[cfg(test)]
@@ -523,6 +624,123 @@ mod tests {
             "幾何重數"
         );
     }
+
+    // ═══════════════ 單元 8-3:特徵多項式 2/2 ═══════════════
+
+    // ---- 練習 2:geometric_multiplicity ----
+
+    /// 講義矩陣 C(= 8-2 三角原例):λ = 3 幾何重數 1 —— rank(C − 3I) = 2、
+    /// nullity = 3 − 2 = 1,對照代數重數 2(對角線兩個 3):**虧損**。λ = −1 則足額。
+    #[test]
+    fn geometric_multiplicity_detects_deficiency_of_c() {
+        let c = Matrix::from_rows(vec![
+            vec![-1.0, 0.0, 0.0],
+            vec![0.0, 3.0, 1.0],
+            vec![0.0, 0.0, 3.0],
+        ]);
+        assert_eq!(geometric_multiplicity(EPS, &c, 3.0).unwrap(), 1);
+        assert_eq!(geometric_multiplicity(EPS, &c, -1.0).unwrap(), 1);
+    }
+
+    /// 對照組:講義矩陣 B(8-1 原例)的 λ = 3 幾何重數 2 = 代數重數 —— 足額不虧損。
+    #[test]
+    fn geometric_multiplicity_of_full_eigenvalue_matches_algebraic() {
+        let b = Matrix::from_rows(vec![
+            vec![3.0, 0.0, 0.0],
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 2.0, 1.0],
+        ]);
+        assert_eq!(geometric_multiplicity(EPS, &b, 3.0).unwrap(), 2);
+    }
+
+    /// λ 不是特徵值 → Eλ = {0} → 幾何重數 0(合法答案,不是錯誤)。
+    #[test]
+    fn geometric_multiplicity_is_zero_for_non_eigenvalue() {
+        let b = Matrix::from_rows(vec![
+            vec![3.0, 0.0, 0.0],
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 2.0, 1.0],
+        ]);
+        assert_eq!(geometric_multiplicity(EPS, &b, 7.0).unwrap(), 0);
+    }
+
+    /// 非方陣 → NotSquare(characteristic_matrix 那層傳上來)。
+    #[test]
+    fn geometric_multiplicity_rejects_non_square() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            geometric_multiplicity(EPS, &a, 1.0).unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    // ---- 練習 4:analyze_eigen_properties ----
+
+    /// 驗收條件:報告必須識別出講義矩陣 C 的特徵值 3 **虧損**(幾何 1 < 代數 2),
+    /// −1 足額;重根合併成一份、順序照首次出現。
+    #[test]
+    fn analyze_identifies_deficient_eigenvalue_of_c() {
+        let c = Matrix::from_rows(vec![
+            vec![-1.0, 0.0, 0.0],
+            vec![0.0, 3.0, 1.0],
+            vec![0.0, 0.0, 3.0],
+        ]);
+        let eigs = triangular_eigenvalues(EPS, &c).unwrap(); // [−1, 3, 3]
+        let reports = analyze_eigen_properties(EPS, &c, &eigs).unwrap();
+        assert_eq!(
+            reports,
+            vec![
+                EigenReport {
+                    value: -1.0,
+                    algebraic: 1,
+                    geometric: 1,
+                    is_deficient: false,
+                },
+                EigenReport {
+                    value: 3.0,
+                    algebraic: 2,
+                    geometric: 1,
+                    is_deficient: true,
+                },
+            ]
+        );
+    }
+
+    /// 對照組:矩陣 B 的兩個特徵值都足額(幾何 = 代數)—— 全員不虧損。
+    /// B 非三角,特徵值列表 [3, 3, −1] 由講義給(det(B − tI) = (3−t)²(−1−t))。
+    #[test]
+    fn analyze_reports_no_deficiency_for_b() {
+        let b = Matrix::from_rows(vec![
+            vec![3.0, 0.0, 0.0],
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 2.0, 1.0],
+        ]);
+        let reports = analyze_eigen_properties(EPS, &b, &[3.0, 3.0, -1.0]).unwrap();
+        assert_eq!(
+            reports,
+            vec![
+                EigenReport {
+                    value: 3.0,
+                    algebraic: 2,
+                    geometric: 2,
+                    is_deficient: false,
+                },
+                EigenReport {
+                    value: -1.0,
+                    algebraic: 1,
+                    geometric: 1,
+                    is_deficient: false,
+                },
+            ]
+        );
+    }
+
+    /// 空列表 → 空報告(沒有根就沒有報告,不是錯誤)。
+    #[test]
+    fn analyze_of_empty_root_list_is_empty() {
+        let b = Matrix::identity(2);
+        assert!(analyze_eigen_properties(EPS, &b, &[]).unwrap().is_empty());
+    }
 }
 
 /// 教材定理的隨機驗證(「for all」形式)。整數策略配精確 / 1e-9 容差(整數加減乘在 f64 下
@@ -762,6 +980,91 @@ mod laws {
         fn discriminant_via_coefficients_agrees_with_has_real(a in int_square_matrix(2)) {
             let delta = a.trace().unwrap().powi(2) - 4.0 * a.determinant_recursive().unwrap();
             prop_assert_eq!(delta >= 0.0, has_real_eigenvalues_2x2(&a));
+        }
+
+        // ═══════════════ 單元 8-3:特徵多項式 2/2 ═══════════════
+
+        // 8-3 練習 2(驗收):rank-nullity 兩路對帳 —— 幾何重數 = n − rank(A − λI)。
+        // 「數自由行」(nullity / special solutions)與「數 pivot 行」(rank)互為餘數,
+        // 對任意 λ 成立(λ 非特徵值時兩邊皆給 0)。
+        #[test]
+        fn geometric_multiplicity_is_dimension_minus_rank(
+            a in int_square_any(), lambda in -5i64..=5,
+        ) {
+            const SOLVE_EPS: f64 = 1e-7; // RREF 除法殘差
+            let m = characteristic_matrix(&a, lambda as f64).unwrap();
+            let geo = geometric_multiplicity(SOLVE_EPS, &a, lambda as f64).unwrap();
+            prop_assert_eq!(geo, a.rows() - m.rank(SOLVE_EPS));
+        }
+
+        // 8-3 練習 3(Theorem 5.1):真特徵值的幾何重數夾在 1 與代數重數之間 ——
+        // 1 ≤ 幾何 ≤ 代數。三角家族:代數重數可直讀(repo 尚無一般求根器,誠實驗在
+        // 能精確算兩邊的家族上)。
+        #[test]
+        fn theorem_5_1_geometric_at_most_algebraic(a in int_upper_triangular()) {
+            const SOLVE_EPS: f64 = 1e-7;
+            let eigs = triangular_eigenvalues(EPS, &a).unwrap();
+            let mut distinct = eigs.clone();
+            distinct.sort_by(f64::total_cmp);
+            distinct.dedup();
+            for lambda in distinct {
+                let alg = algebraic_multiplicity(EPS, &eigs, lambda);
+                let geo = geometric_multiplicity(SOLVE_EPS, &a, lambda).unwrap();
+                prop_assert!(
+                    (1..=alg).contains(&geo),
+                    "Theorem 5.1 破功:λ = {},幾何 {} ∉ [1, 代數 {}]",
+                    lambda,
+                    geo,
+                    alg
+                );
+            }
+        }
+
+        // 8-3 對照律(預告對角化):對角矩陣**永不虧損** —— 每個特徵值幾何 = 代數
+        // (dᵢ 在對角線出現 k 次 ⟺ D − dᵢI 恰有 k 個零對角 ⟺ nullity = k)。
+        // 下一單元的「可對角化 ⟺ 每個 λ 都足額」在最簡家族上先看見。
+        #[test]
+        fn diagonal_matrices_are_never_deficient((diag, _) in diagonal_with_index()) {
+            const SOLVE_EPS: f64 = 1e-7;
+            let d = diagonal_matrix(&diag);
+            let mut distinct = diag.clone();
+            distinct.sort_by(f64::total_cmp);
+            distinct.dedup();
+            for lambda in distinct {
+                prop_assert_eq!(
+                    geometric_multiplicity(SOLVE_EPS, &d, lambda).unwrap(),
+                    algebraic_multiplicity(EPS, &diag, lambda),
+                    "對角矩陣的 λ = {} 不該虧損",
+                    lambda
+                );
+            }
+        }
+
+        // 8-3 練習 4:報告與獨立計算器逐項對帳 —— 每個相異 λ 恰一份、algebraic /
+        // geometric / is_deficient 與 standalone 函式一致、Σ 代數重數 = n(8-2 會計律
+        // 經報告路重現)。
+        #[test]
+        fn eigen_reports_agree_with_standalone_calculators(a in int_upper_triangular()) {
+            const SOLVE_EPS: f64 = 1e-7;
+            let eigs = triangular_eigenvalues(EPS, &a).unwrap();
+            let reports = analyze_eigen_properties(SOLVE_EPS, &a, &eigs).unwrap();
+
+            let mut distinct = eigs.clone();
+            distinct.sort_by(f64::total_cmp);
+            distinct.dedup();
+            prop_assert_eq!(reports.len(), distinct.len(), "每個相異 λ 恰一份報告");
+
+            let mut total_algebraic = 0;
+            for r in &reports {
+                prop_assert_eq!(r.algebraic, algebraic_multiplicity(SOLVE_EPS, &eigs, r.value));
+                prop_assert_eq!(
+                    r.geometric,
+                    geometric_multiplicity(SOLVE_EPS, &a, r.value).unwrap()
+                );
+                prop_assert_eq!(r.is_deficient, r.geometric < r.algebraic);
+                total_algebraic += r.algebraic;
+            }
+            prop_assert_eq!(total_algebraic, a.rows(), "Σ 代數重數 = n");
         }
     }
 }
