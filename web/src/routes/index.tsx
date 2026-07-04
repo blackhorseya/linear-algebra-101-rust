@@ -3,48 +3,115 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 import { loadLinalg } from '../lib/linalg'
-import { TransformCanvas } from '../components/TransformCanvas'
-import { NumberField, Status } from '../components/ui'
-import { SharedMatrixNote } from '../components/SharedMatrixNote'
+import { EditableGrid, SizeToggle } from '../components/MatrixGrid'
+import { NumberField, Row, Status } from '../components/ui'
+import { resizeGrid, type Size } from '../lib/grid'
 import { fmt } from '../lib/format'
-import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
 import { useSharedMatrix } from '../lib/use-shared-matrix'
-import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 // 檔名 index.tsx → 對應路徑 '/'。新增 about.tsx 就會自動產生 '/about'。
 export const Route = createFileRoute('/')({
   component: Home,
 })
 
-// 總覽儀表板的 preset:一顆矩陣一種命運,切換後六個面板同時翻轉 ——
-// 「所有章節都在講同一顆矩陣」的最快示範。
-const PRESETS: { name: string; desc: string; m: Matrix2x2 }[] = [
-  {
-    name: '可逆',
-    desc: 'det ≠ 0、rank 2、核 = {0}、有 A⁻¹、有實特徵值 —— 全部的燈一起亮。',
-    m: { a: 2, b: 1, c: 1, d: 1 },
-  },
-  {
-    name: '剪切',
-    desc: 'det = 1(面積不變)但特徵值只剩重根 1 —— 可逆與「方向被保留多少」是兩回事。',
-    m: { a: 1, b: 1, c: 0, d: 1 },
-  },
-  {
-    name: '旋轉 90°',
-    desc: '可逆、保面積,卻沒有任何實特徵方向 —— 每個向量都被轉開。',
-    m: { a: 0, b: -1, c: 1, d: 0 },
-  },
-  {
-    name: '奇異(rank 1)',
-    desc: 'det = 0:值域塌成一條線、核浮現一條線、A⁻¹ 消失 —— 所有面板一起翻臉。',
-    m: { a: 1, b: 2, c: 2, d: 4 },
-  },
-  {
-    name: '零矩陣',
-    desc: '一切被吸進原點:rank 0、核 = 整個平面 —— 兩個極端同時發生。',
-    m: { a: 0, b: 0, c: 0, d: 0 },
-  },
+// ---------------------------------------------------------------------------
+// 計算機:一顆 A(n×n,與 ?m= 共享)配上 B / v / λ,選運算看結果 ——
+// 各章節做題目時的對答案工具。每個結果都由 core 經 WASM 計算,JS 只排版。
+// ---------------------------------------------------------------------------
+
+/** λ 與特徵值「多近算相等」的容差(做題目時 λ 通常是整數,1e-6 足夠嚴格)。 */
+const EIGEN_EPSILON = 1e-6
+
+/** 各尺寸的預設 A(可逆,消去後數字好讀)。 */
+const DEFAULT_A: Record<Size, number[][]> = {
+  2: [
+    [2, 1],
+    [1, 1],
+  ],
+  3: [
+    [0, 2, 1],
+    [4, 1, 0],
+    [2, 1, 1],
+  ],
+  4: [
+    [1, 2, 0, 1],
+    [0, 1, 3, 0],
+    [0, 0, 2, 2],
+    [0, 0, 0, 3],
+  ],
+}
+
+/** 第二顆矩陣 B 的預設(單位陣起步 —— A·B = A 一眼可驗)。 */
+const identity = (n: number): number[][] =>
+  Array.from({ length: n }, (_, r) =>
+    Array.from({ length: n }, (_, c) => (r === c ? 1 : 0)),
+  )
+
+/** 向量隨尺寸增減:保留前段、新分量補 1(全 0 的 v 對多數運算沒戲唱)。 */
+const resizeVec = (v: number[], n: number): number[] =>
+  Array.from({ length: n }, (_, i) => v[i] ?? 1)
+
+type OpId =
+  | 'Av'
+  | 'AB'
+  | 'det'
+  | 'inv'
+  | 'rref'
+  | 'solve'
+  | 'subspace'
+  | 'eigen'
+  | 'coords'
+
+/** 運算選單:need 決定顯示哪些輸入;only2 = 目前 binding 僅支援 2×2。 */
+const OPS: {
+  id: OpId
+  name: string
+  need: ('B' | 'v' | 'lambda')[]
+  only2?: boolean
+}[] = [
+  { id: 'Av', name: 'A·v', need: ['v'] },
+  { id: 'AB', name: 'A·B', need: ['B'] },
+  { id: 'det', name: 'det(A)', need: [] },
+  { id: 'inv', name: 'A⁻¹', need: [] },
+  { id: 'rref', name: 'RREF·rank', need: [] },
+  { id: 'solve', name: '解 Ax = b', need: ['v'] },
+  { id: 'subspace', name: '子空間基底', need: [], only2: true },
+  { id: 'eigen', name: '特徵檢定', need: ['lambda'], only2: true },
+  { id: 'coords', name: '座標·[T]_B', need: ['B', 'v'], only2: true },
 ]
+
+/** 唯讀矩陣(計算結果用,monospace 格子)。 */
+function Mat({ grid }: { grid: number[][] }) {
+  const cols = grid[0]?.length ?? 0
+  return (
+    <div
+      className="inline-grid gap-1 align-middle"
+      style={{ gridTemplateColumns: `repeat(${cols}, minmax(3rem, auto))` }}
+    >
+      {grid.map((row, r) =>
+        row.map((v, c) => (
+          <span
+            key={`${r}-${c}`}
+            className="flex h-9 items-center justify-center rounded bg-slate-800 px-2 font-mono text-xs tabular-nums text-slate-200"
+          >
+            {fmt(v)}
+          </span>
+        )),
+      )}
+    </div>
+  )
+}
+
+/** 把攤平的基底(長度 0 / 2 / 4)印成向量列。 */
+function fmtBasis(b: Float64Array): string {
+  if (b.length === 0) return '∅(只有零向量)'
+  const vs: string[] = []
+  for (let i = 0; i < b.length; i += 2) vs.push(`(${fmt(b[i])}, ${fmt(b[i + 1])})`)
+  return vs.join('、')
+}
+
+const fmtVec = (v: ArrayLike<number>): string =>
+  `(${Array.from(v, fmt).join(', ')})`
 
 // 深入各章的入口卡片,照 3Blue1Brown《Essence of Linear Algebra》的敘事
 // 順序分節:向量 → 變換 → 合成 → 行列式 → 逆與子空間 → 換基底 → 特徵值,
@@ -187,40 +254,39 @@ function Home() {
     error,
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
-  // 單一真相:preset、矩陣輸入框、Canvas 拖曳、六個面板全吃這份 state。
-  // 共享優先:URL 有共享矩陣就採其左上 2×2,離開首頁也帶著同一顆走。
+  // 共享優先:A(n×n)與 ?m= 同步,尺寸與內容都從共享矩陣還原。
   const { initial, publish } = useSharedMatrix()
-  const [m, setM] = useState<Matrix2x2>(() => toMatrix2x2(initial) ?? PRESETS[0].m)
-  const [v, setV] = useState<Vec2>({ x: 1, y: 1 })
-
-  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享(v 不共享)。
-  const applyM = (next: Matrix2x2) => {
-    setM(next)
-    publish(patchTopLeft(initial, next))
-  }
+  const [n, setN] = useState<Size>(() => (initial?.length as Size) ?? 2)
+  const [gridA, setGridA] = useState<number[][]>(() => initial ?? DEFAULT_A[2])
+  const [gridB, setGridB] = useState<number[][]>(() => identity(initial?.length ?? 2))
+  const [vec, setVec] = useState<number[]>(() => resizeVec([3, 1], initial?.length ?? 2))
+  const [lambda, setLambda] = useState(1)
+  const [op, setOp] = useState<OpId>('Av')
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
 
-  // 全貌 = 對同一顆 A 問六個問題,每一問都是 core 的獨立計算(非彼此推導):
-  // 它們的一致性(det≠0 ⟺ 可逆 ⟺ rank 滿⋯)是定理,不是前端共用布林。
-  const { a, b, c, d } = m
-  const av = linalg.transformPoint(a, b, c, d, v.x, v.y)
-  const det = linalg.determinant([a, b, c, d], 2)
-  const rank = linalg.rank(a, b, c, d)
-  const nul = linalg.nullity(a, b, c, d)
-  const basis = linalg.rangeBasis(a, b, c, d)
-  const onto = linalg.isOnto(a, b, c, d)
-  const inv = linalg.inverseMatrix(a, b, c, d)
-  const report = linalg.transformationReport(a, b, c, d)
-  const hasReal = linalg.hasRealEigenvalues2x2([a, b, c, d])
-  const vIsZero = v.x === 0 && v.y === 0
-  const onEigen = !vIsZero && linalg.areParallel(v.x, v.y, av[0], av[1])
+  // --- 互動(A 所有寫路徑收斂到 applyA:本地更新 + 整顆寫回共享) ---
+  const applyA = (next: number[][]) => {
+    setGridA(next)
+    publish(next)
+  }
+  const setCellA = (r: number, c: number, value: number) =>
+    applyA(gridA.map((row, ri) => (ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row)))
+  const setCellB = (r: number, c: number, value: number) =>
+    setGridB((g) => g.map((row, ri) => (ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row)))
+  const changeSize = (next: Size) => {
+    setN(next)
+    applyA(resizeGrid(gridA, next))
+    setGridB((g) => resizeGrid(g, next))
+    setVec((v) => resizeVec(v, next))
+    // 2×2 專用運算在大尺寸下沒有 binding,自動退回通用的 A·v。
+    if (next !== 2 && OPS.find((o) => o.id === op)?.only2) setOp('Av')
+  }
 
-  const detCollapsed = Math.abs(det) < 1e-9
-  const activePreset = PRESETS.find(
-    (p) => p.m.a === a && p.m.b === b && p.m.c === c && p.m.d === d,
-  )
+  const active = OPS.find((o) => o.id === op)!
+  const opDisabled = (o: (typeof OPS)[number]) => (o.only2 ?? false) && n !== 2
+  const flatA = gridA.flat()
 
   return (
     <section className="space-y-12">
@@ -229,163 +295,94 @@ function Home() {
           線性代數 101 · Web
         </h1>
         <p className="text-slate-400">
-          整個線性代數都在講同一件事:<span className="text-slate-200">一顆矩陣對向量做了什麼</span>。
-          調整 <span className="text-amber-400">A</span>、拖動{' '}
-          <span className="text-violet-400">v</span>,看變換、行列式、秩、零空間、
-          可逆性、特徵方向同時連動 —— 每一格都由 Rust(WASM)獨立計算,
-          它們的一致是定理。矩陣會寫進網址,點進任何一章都帶著同一顆走。
+          matrix / vector 計算機 —— 各章做題目時的對答案工具:輸入{' '}
+          <span className="text-amber-400">A</span>(必要時配上 B、v、λ),選運算看結果。
+          每個數字都由 Rust core(WASM)計算,JS 只排版;A 會寫進網址,
+          點進任何一章都帶著同一顆走。
         </p>
-        <SharedMatrixNote n={initial?.length} />
       </div>
 
-      {/* 控制列:preset + A 與 v 的輸入框(與 Canvas 拖曳共用同一份 state) */}
-      <div className="space-y-3">
+      {/* 運算選單 */}
+      <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
+          {OPS.map((o) => (
             <button
-              key={p.name}
+              key={o.id}
               type="button"
-              onClick={() => applyM(p.m)}
+              disabled={opDisabled(o)}
+              onClick={() => setOp(o.id)}
+              title={opDisabled(o) ? '目前僅支援 2×2(binding 限制)' : undefined}
               className={`rounded-md border px-3 py-1.5 text-sm transition ${
-                activePreset?.name === p.name
+                op === o.id
                   ? 'border-violet-500 bg-violet-500/15 text-violet-200'
-                  : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                  : opDisabled(o)
+                    ? 'cursor-not-allowed border-slate-800 bg-slate-900/40 text-slate-600'
+                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
               }`}
             >
-              {p.name}
+              {o.name}
+              {o.only2 && <span className="ml-1 text-[10px] text-slate-500">2×2</span>}
             </button>
           ))}
         </div>
-        <p className="text-xs text-slate-500">
-          {activePreset?.desc ?? '自訂矩陣 —— 拖 î′、ĵ′ 或直接改數字,六個面板即時翻轉。'}
-        </p>
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-          <div className="flex items-end gap-3">
-            <span className="pb-1 font-mono text-amber-400/90">A =</span>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label="a" value={a} onChange={(x) => applyM({ ...m, a: x })} />
-              <NumberField label="b" value={b} onChange={(x) => applyM({ ...m, b: x })} />
-              <NumberField label="c" value={c} onChange={(x) => applyM({ ...m, c: x })} />
-              <NumberField label="d" value={d} onChange={(x) => applyM({ ...m, d: x })} />
-            </div>
-          </div>
-          <div className="flex items-end gap-3">
-            <span className="pb-1 font-mono text-violet-400/90">v =</span>
-            <div className="flex gap-2">
-              <NumberField label="x" value={v.x} onChange={(x) => setV({ ...v, x })} />
-              <NumberField label="y" value={v.y} onChange={(y) => setV({ ...v, y })} />
-            </div>
-          </div>
+
+        {/* 輸入區:A 永遠在;B / v / λ 依運算需要出現 */}
+        <div className="flex flex-wrap items-start gap-x-10 gap-y-5">
+          <fieldset className="space-y-2">
+            <legend className="mb-1 flex items-center gap-4 text-sm font-medium text-slate-300">
+              矩陣 A({n}×{n})
+              <SizeToggle n={n} onChange={changeSize} />
+            </legend>
+            <EditableGrid grid={gridA} onCell={setCellA} />
+          </fieldset>
+
+          {active.need.includes('B') && (
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-sm font-medium text-slate-300">
+                {op === 'coords' ? '基底矩陣 B(行 = b₁、b₂)' : `矩陣 B(${n}×${n})`}
+              </legend>
+              <EditableGrid grid={gridB} onCell={setCellB} />
+            </fieldset>
+          )}
+
+          {active.need.includes('v') && (
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-sm font-medium text-slate-300">
+                {op === 'solve' ? '右端向量 b' : op === 'coords' ? '點 x' : '向量 v'}
+              </legend>
+              <div className="flex gap-2">
+                {vec.map((val, i) => (
+                  <NumberField
+                    key={i}
+                    label={`${op === 'solve' ? 'b' : op === 'coords' ? 'x' : 'v'}${i + 1}`}
+                    value={val}
+                    onChange={(x) =>
+                      setVec((v) => v.map((old, j) => (j === i ? x : old)))
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+          )}
+
+          {active.need.includes('lambda') && (
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-sm font-medium text-slate-300">候選特徵值 λ</legend>
+              <NumberField label="λ" value={lambda} onChange={setLambda} />
+            </fieldset>
+          )}
         </div>
-      </div>
 
-      {/* 主畫布 + 全貌面板:左看幾何、右看六問(lg 以上並排) */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <TransformCanvas
-            linalg={linalg}
-            m={m}
-            v={v}
-            onChangeMatrix={applyM}
-            onChangeV={setV}
-          />
-          <p className="text-xs text-slate-500">
-            拖<span className="text-emerald-400"> î′</span>、
-            <span className="text-red-400">ĵ′</span>(矩陣的行)變形整個平面;拖
-            <span className="text-violet-400"> v</span> 看它的像
-            <span className="text-amber-400"> A·v</span>。v 與 A·v 共線時兩箭頭加粗
-            —— 你正踩在特徵方向上。
-          </p>
-        </div>
-
-        <div className="grid content-start gap-3 sm:grid-cols-2">
-          <Panel title="變換 A·v" to="/transform">
-            <p className="font-mono text-sm text-amber-300">
-              A·v = ({fmt(av[0])}, {fmt(av[1])})
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {vIsZero
-                ? '0 永遠被送到 0 —— 線性變換釘住原點。'
-                : onEigen
-                  ? 'v 與 A·v 共線:v 是特徵向量(A·v = λv)!'
-                  : '矩陣是函數:吃進 v、吐出 A·v。'}
-            </p>
-          </Panel>
-
-          <Panel title="行列式" to="/determinant">
-            <p
-              className={`font-mono text-sm ${
-                detCollapsed ? 'text-rose-400' : det < 0 ? 'text-amber-400' : 'text-emerald-400'
-              }`}
-            >
-              det(A) = {fmt(det)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {detCollapsed
-                ? '面積歸零 —— 平面被壓扁,回不去了。'
-                : det < 0
-                  ? `面積 ×${fmt(Math.abs(det))},且平面翻面(定向反轉)。`
-                  : `單位方格的面積被縮放 ${fmt(det)} 倍。`}
-            </p>
-          </Panel>
-
-          <Panel title="值域 Col A" to="/range">
-            <p className="font-mono text-sm text-slate-200">
-              rank = {rank}
-              {onto ? '(映成 ℝ²)' : rank === 1 ? '(塌成一條線)' : '(只剩原點)'}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {rank === 0
-                ? '基底 = ∅ —— 除了原點哪裡都到不了。'
-                : `基底:(${fmt(basis[0])}, ${fmt(basis[1])})${
-                    basis.length === 4 ? `、(${fmt(basis[2])}, ${fmt(basis[3])})` : ''
-                  }`}
-            </p>
-          </Panel>
-
-          <Panel title="零空間 Null A" to="/nullspace">
-            <p className="font-mono text-sm text-slate-200">
-              nullity = {nul}
-              <span className="text-slate-500">(rank + nullity = {rank + nul})</span>
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {nul === 0
-                ? '核 = {0}:沒有非零向量被壓到原點。'
-                : nul === 1
-                  ? '一整條方向被 A 吃掉 —— 核是過原點的直線。'
-                  : '整個平面都被吸進原點。'}
-            </p>
-          </Panel>
-
-          <Panel title="可逆性" to="/invertibility">
-            {inv ? (
-              <p className="font-mono text-sm text-emerald-300">
-                A⁻¹ = [[{fmt(inv[0])}, {fmt(inv[1])}], [{fmt(inv[2])}, {fmt(inv[3])}]]
-              </p>
-            ) : (
-              <p className="font-mono text-sm text-rose-400">A⁻¹ 不存在</p>
-            )}
-            <p className="mt-1 text-xs text-slate-500">
-              一對一 {report.isOneToOne ? '✓' : '✗'} · 映成 {report.isOnto ? '✓' : '✗'} · 可逆{' '}
-              {report.isInvertible ? '✓' : '✗'} —— 三燈永遠同進退(2×2 方陣)。
-            </p>
-          </Panel>
-
-          <Panel title="特徵方向" to="/eigenvalues">
-            <p
-              className={`font-mono text-sm ${hasReal ? 'text-sky-300' : 'text-rose-400'}`}
-            >
-              {hasReal ? '存在實特徵值 ✓' : '沒有實特徵值'}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {hasReal
-                ? onEigen
-                  ? 'v 現在就踩在特徵方向上 —— 只被伸縮、不被轉向。'
-                  : '拖 v 找找看:哪個方向的 v 與 A·v 會共線?'
-                : '每個方向都被轉開(如純旋轉)—— det(A−λI) 永不歸零。'}
-            </p>
-          </Panel>
-        </div>
+        {/* 結果區 */}
+        <CalcResult
+          op={op}
+          n={n}
+          linalg={linalg}
+          flatA={flatA}
+          gridB={gridB}
+          vec={vec}
+          lambda={lambda}
+        />
       </div>
 
       {/* 深入各章:照 3Blue1Brown《Essence of Linear Algebra》的敘事順序 */}
@@ -393,7 +390,7 @@ function Home() {
         <div>
           <h2 className="text-lg font-semibold text-slate-100">深入各章</h2>
           <p className="text-xs text-slate-500">
-            照 3Blue1Brown《Essence of Linear Algebra》的敘事走 —— 上面調好的矩陣會跟著你進每一頁。
+            照 3Blue1Brown《Essence of Linear Algebra》的敘事走 —— 上面輸入的 A 會跟著你進每一頁。
           </p>
         </div>
         {SECTIONS.map(({ title, sub, items }) => (
@@ -423,10 +420,7 @@ function Home() {
         <h2 className="text-sm font-semibold text-slate-500">技術棧</h2>
         <ul className="grid gap-2 sm:grid-cols-3">
           {STACK.map(([name, desc]) => (
-            <li
-              key={name}
-              className="rounded-md border border-slate-800/60 px-3 py-2"
-            >
+            <li key={name} className="rounded-md border border-slate-800/60 px-3 py-2">
               <p className="text-sm text-slate-300">{name}</p>
               <p className="text-xs text-slate-500">{desc}</p>
             </li>
@@ -437,8 +431,8 @@ function Home() {
   )
 }
 
-/** 全貌面板的一格:一章的縮影 + 深入連結(帶著共享矩陣走)。 */
-function Panel({
+/** 結果卡外框:標題 + 對應章節的「深入 →」(帶著共享矩陣走)。 */
+function ResultCard({
   title,
   to,
   children,
@@ -448,17 +442,266 @@ function Panel({
   children: ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-300">{title}</h3>
-        <Link
-          to={to}
-          className="shrink-0 text-xs text-violet-400 transition hover:text-violet-300"
-        >
-          深入 →
+    <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-medium text-slate-300">{title}</h2>
+        <Link to={to} className="shrink-0 text-xs text-violet-400 transition hover:text-violet-300">
+          深入圖解 →
         </Link>
       </div>
       {children}
     </div>
   )
+}
+
+/**
+ * 依選中的運算呼叫對應 binding 並排版結果。全部同步呼叫(計算很便宜),
+ * 每次輸入變動即時重算 —— 沒有「=」按鈕,答案永遠是新鮮的。
+ */
+function CalcResult({
+  op,
+  n,
+  linalg,
+  flatA,
+  gridB,
+  vec,
+  lambda,
+}: {
+  op: OpId
+  n: Size
+  linalg: NonNullable<Awaited<ReturnType<typeof loadLinalg>>>
+  flatA: number[]
+  gridB: number[][]
+  vec: number[]
+  lambda: number
+}) {
+  switch (op) {
+    case 'Av': {
+      // n×n 的 A·v = A 右乘 n×1 行向量(multiply 通吃,transform_point 只管 2×2)。
+      const out = linalg.multiplyExpand(flatA, n, n, vec, n, 1)
+      return (
+        <ResultCard title="A·v — 矩陣作用在向量上" to="/transform">
+          <p className="font-mono text-lg text-amber-300">A·v = {fmtVec(out.c.map((r) => r[0]))}</p>
+          <p className="text-xs text-slate-500">
+            每個分量 = A 的一列與 v 的點積;2×2 時到「2D 線性變換」拖著看整個平面被變形。
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'AB': {
+      const out = linalg.multiplyExpand(flatA, n, n, gridB.flat(), n, n)
+      return (
+        <ResultCard title="A·B — 矩陣乘法(合成)" to="/multiply">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-slate-400">A·B =</span>
+            <Mat grid={out.c} />
+          </div>
+          <p className="text-xs text-slate-500">
+            cᵢⱼ = A 第 i 列 · B 第 j 欄;到「矩陣乘法」逐格看展開項,或到「合成與可逆性」看它是兩個變換的接力。
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'det': {
+      const det = linalg.determinant(flatA, n)
+      const collapsed = Math.abs(det) < 1e-9
+      return (
+        <ResultCard title="det(A) — 有號體積" to="/determinant">
+          <p
+            className={`font-mono text-lg ${
+              collapsed ? 'text-rose-400' : det < 0 ? 'text-amber-400' : 'text-emerald-400'
+            }`}
+          >
+            det(A) = {fmt(det)}
+          </p>
+          <p className="text-xs text-slate-500">
+            {collapsed
+              ? 'det = 0:空間被壓扁,A 不可逆。'
+              : det < 0
+                ? `|det| = ${fmt(Math.abs(det))} 倍縮放,負號 = 定向反轉(翻面)。`
+                : `單位方塊的體積被縮放 ${fmt(det)} 倍,定向不變。`}
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'inv': {
+      // invert_trace 的終態 P = Eₖ⋯E₁ 即 A⁻¹(可逆時);IMT 旗標一併取得。
+      const trace = linalg.invertTrace(flatA, n)
+      const last = trace.steps[trace.steps.length - 1]
+      return (
+        <ResultCard title="A⁻¹ — Gauss-Jordan 求逆" to="/invertibility">
+          {trace.invertible ? (
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-slate-400">A⁻¹ =</span>
+              <Mat grid={last.p} />
+            </div>
+          ) : (
+            <p className="font-mono text-lg text-rose-400">A⁻¹ 不存在(RREF 有零列)</p>
+          )}
+          <Row label="IMT 對帳(各自獨立計算)">
+            <span className="font-mono text-xs text-slate-300">
+              rank = {trace.rank} · nullity = {trace.nullity} · 行獨立{' '}
+              {trace.colsIndependent ? '✓' : '✗'}
+            </span>
+          </Row>
+          <p className="text-xs text-slate-500">
+            到「可逆矩陣」逐步播放消去過程,看每一步基本矩陣的幾何動作。
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'rref': {
+      const trace = linalg.eliminate(flatA, n, n, -1)
+      const last = trace.steps[trace.steps.length - 1]
+      return (
+        <ResultCard title="RREF(A) 與 rank" to="/elimination">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-slate-400">RREF =</span>
+            <Mat grid={last.matrix} />
+          </div>
+          <Row label="rank / nullity(rank-nullity 對帳)">
+            <span className="font-mono text-xs text-slate-300">
+              rank = {trace.rank} · nullity = {n - trace.rank} · 相加 = {n}
+            </span>
+          </Row>
+          <Row label="pivot 行 / 自由行">
+            <span className="font-mono text-xs text-slate-300">
+              pivot:{trace.pivotColumns.length ? trace.pivotColumns.map((c) => c + 1).join(', ') : '無'}
+              {' · '}自由:{trace.freeColumns.length ? trace.freeColumns.map((c) => c + 1).join(', ') : '無'}
+            </span>
+          </Row>
+        </ResultCard>
+      )
+    }
+    case 'solve': {
+      // 增廣 [A | b] 消去:每列尾端接上 bᵢ,augCol = n。
+      const data = Array.from({ length: n }, (_, r) => [
+        ...flatA.slice(r * n, r * n + n),
+        vec[r],
+      ]).flat()
+      const trace = linalg.eliminate(data, n, n + 1, n)
+      const last = trace.steps[trace.steps.length - 1]
+      return (
+        <ResultCard title="解 Ax = b — 增廣消去" to="/elimination">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-slate-400">RREF[A|b] =</span>
+            <Mat grid={last.matrix} />
+          </div>
+          {trace.solutionKind === 'Unique' && (
+            <p className="font-mono text-lg text-emerald-300">
+              唯一解:x = {fmtVec(last.matrix.map((row) => row[n]))}
+            </p>
+          )}
+          {trace.solutionKind === 'Infinite' && (
+            <p className="text-sm text-sky-300">
+              無限多解 —— 自由變數:{trace.freeColumns.map((c) => `x${c + 1}`).join('、')}
+              (rank {trace.rank} &lt; n = {n})。
+            </p>
+          )}
+          {trace.solutionKind === 'Inconsistent' && (
+            <p className="text-sm text-rose-400">無解 —— 增廣欄冒出矛盾列(0 = 非零)。</p>
+          )}
+          <p className="text-xs text-slate-500">到「高斯消去」逐步播放這條消去路。</p>
+        </ResultCard>
+      )
+    }
+    case 'subspace': {
+      // 2×2 專用:三大子空間基底各自由 core 算,支數 = 維度。
+      const [a, b, c, d] = flatA
+      const col = linalg.rangeBasis(a, b, c, d)
+      const row = linalg.rowSpaceBasis(a, b, c, d)
+      const nul = linalg.eigenspaceBasis2d(flatA, 0, EIGEN_EPSILON) // Null A = E₀
+      const rank = linalg.rank(a, b, c, d)
+      return (
+        <ResultCard title="子空間基底 — Col / Row / Null" to="/nullspace">
+          <Row label={`Col A 基底(dim = ${col.length / 2})`}>
+            <span className="font-mono text-sm text-amber-300">{fmtBasis(col)}</span>
+          </Row>
+          <Row label={`Row A 基底(dim = ${row.length / 2})`}>
+            <span className="font-mono text-sm text-sky-300">{fmtBasis(row)}</span>
+          </Row>
+          <Row label={`Null A 基底(dim = ${nul.length / 2})`}>
+            <span className="font-mono text-sm text-violet-300">{fmtBasis(nul)}</span>
+          </Row>
+          <p className="text-xs text-slate-500">
+            rank = {rank}:dim Col = dim Row(行秩 = 列秩),rank + dim Null = 2(rank-nullity)——
+            三個基底各自獨立算,維度關係是定理。
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'eigen': {
+      // 2×2 專用:λ 是不是特徵值 = A − λI 塌不塌(det 歸零)。
+      const cm = linalg.characteristicMatrix2d(flatA, lambda)
+      const detM = linalg.determinant([cm[0], cm[1], cm[2], cm[3]], 2)
+      const eig = linalg.eigenspaceBasis2d(flatA, lambda, EIGEN_EPSILON)
+      const hasReal = linalg.hasRealEigenvalues2x2(flatA)
+      const isEigen = eig.length > 0
+      return (
+        <ResultCard title={`特徵檢定 — λ = ${fmt(lambda)} 是特徵值嗎?`} to="/eigenvalues">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-slate-400">A − λI =</span>
+            <Mat
+              grid={[
+                [cm[0], cm[1]],
+                [cm[2], cm[3]],
+              ]}
+            />
+            <span className="font-mono text-sm text-slate-400">det = {fmt(detM)}</span>
+          </div>
+          {isEigen ? (
+            <p className="font-mono text-sm text-emerald-300">
+              ✓ λ = {fmt(lambda)} 是特徵值 —— E_λ 基底:{fmtBasis(eig)}
+            </p>
+          ) : (
+            <p className="font-mono text-sm text-slate-400">
+              ✗ 不是:det(A − λI) ≠ 0,A − λI 沒塌。
+              {hasReal ? '換個 λ 試試。' : '(這顆 A 根本沒有實特徵值 —— 如純旋轉。)'}
+            </p>
+          )}
+          <p className="text-xs text-slate-500">
+            到「特徵值與特徵向量」拖 λ 滑桿,看 det(A−λI) 歸零時平行四邊形塌成線。
+          </p>
+        </ResultCard>
+      )
+    }
+    case 'coords': {
+      // 2×2 專用:B 的行當基底 {b₁, b₂},問 x 的 B-座標與 A 的 B-表示。
+      const b1: [number, number] = [gridB[0][0], gridB[1][0]]
+      const b2: [number, number] = [gridB[0][1], gridB[1][1]]
+      const coord = linalg.coordinates2d(b1[0], b1[1], b2[0], b2[1], vec[0], vec[1])
+      const tb = linalg.bMatrix2d(flatA, b1[0], b1[1], b2[0], b2[1])
+      const degenerate = coord.length === 0
+      return (
+        <ResultCard title="座標與 [T]_B — 換把尺再量一次" to="/coordinates">
+          {degenerate ? (
+            <p className="text-sm text-rose-400">
+              b₁ ∥ b₂:B 的行不是 ℝ² 的基底,座標未定義 —— 換一顆行獨立的 B。
+            </p>
+          ) : (
+            <>
+              <Row label="x 的 B-座標 [x]_B(x = c₁·b₁ + c₂·b₂)">
+                <span className="font-mono text-sm text-sky-300">{fmtVec(coord)}</span>
+              </Row>
+              <Row label="A 的 B-表示 [T]_B = B⁻¹AB">
+                {tb.length === 4 ? (
+                  <Mat
+                    grid={[
+                      [tb[0], tb[1]],
+                      [tb[2], tb[3]],
+                    ]}
+                  />
+                ) : (
+                  <span className="text-sm text-rose-400">未定義</span>
+                )}
+              </Row>
+              <p className="text-xs text-slate-500">
+                到「座標系統」拖斜格的尺、到「相似」看 [T]_B 四格變而 det 鎖死。
+              </p>
+            </>
+          )}
+        </ResultCard>
+      )
+    }
+  }
 }
