@@ -230,3 +230,5 @@ proptest-regressions/
 # wasm-pack 產出(.wasm + JS glue),由 `task wasm:build` 生成到 web/src/lib/wasm,
 # 是衍生產物不入版控(對應的 ignore 規則在 web/.gitignore)。
 /web/src/lib/wasm/
+
+**/.claude/**
