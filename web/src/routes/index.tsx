@@ -288,6 +288,20 @@ function Home() {
   const opDisabled = (o: (typeof OPS)[number]) => (o.only2 ?? false) && n !== 2
   const flatA = gridA.flat()
 
+  // 小整數(−5…5)隨機出題:A 必隨機(寫回共享);當前運算用到的 B / v 一起換,
+  // 沒用到的不動(沿 /determinant 的隨機範圍,消去後數字仍好讀)。
+  const rand = () => Math.floor(Math.random() * 11) - 5
+  const randomize = () => {
+    applyA(gridA.map((row) => row.map(rand)))
+    if (active.need.includes('B')) setGridB((g) => g.map((row) => row.map(rand)))
+    if (active.need.includes('v')) setVec((v) => v.map(rand))
+  }
+  const reset = () => {
+    applyA(DEFAULT_A[n].map((row) => [...row]))
+    setGridB(identity(n))
+    setVec(resizeVec([3, 1], n))
+  }
+
   return (
     <section className="space-y-12">
       <div className="space-y-3">
@@ -329,9 +343,25 @@ function Home() {
         {/* 輸入區:A 永遠在;B / v / λ 依運算需要出現 */}
         <div className="flex flex-wrap items-start gap-x-10 gap-y-5">
           <fieldset className="space-y-2">
-            <legend className="mb-1 flex items-center gap-4 text-sm font-medium text-slate-300">
+            <legend className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-300">
               矩陣 A({n}×{n})
               <SizeToggle n={n} onChange={changeSize} />
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={randomize}
+                  className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 transition hover:border-violet-500 hover:text-violet-300"
+                >
+                  🎲 隨機出題
+                </button>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 transition hover:border-violet-500 hover:text-violet-300"
+                >
+                  ↺ 重設
+                </button>
+              </span>
             </legend>
             <EditableGrid grid={gridA} onCell={setCellA} />
           </fieldset>
