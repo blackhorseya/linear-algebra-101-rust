@@ -56,6 +56,12 @@ pub enum LinAlgError {
     /// [`NotSquare`](LinAlgError::NotSquare) 的事,兩層失敗各自精確。
     /// (見 [`Matrix::inverse`](crate::Matrix::inverse)。)
     NotInvertible,
+    /// 方陣既非上三角也非下三角(容差內)——「特徵值 = 主對角線直讀」只對三角矩陣
+    /// 成立,一般矩陣得走特徵方程 det(A − tI) = 0。與
+    /// [`NotDiagonal`](LinAlgError::NotDiagonal) 同族的形狀類錯誤;非方陣同樣**不**用
+    /// 這個 variant(那是 [`NotSquare`](LinAlgError::NotSquare) 的事)。
+    /// (見 [`triangular_eigenvalues`](crate::triangular_eigenvalues)。)
+    NotTriangular,
 }
 
 impl fmt::Display for LinAlgError {
@@ -113,6 +119,12 @@ impl fmt::Display for LinAlgError {
                 write!(
                     f,
                     "not invertible: matrix is singular, so no inverse exists"
+                )
+            }
+            LinAlgError::NotTriangular => {
+                write!(
+                    f,
+                    "not triangular: matrix is neither upper nor lower triangular"
                 )
             }
         }
@@ -220,6 +232,14 @@ mod tests {
         assert_eq!(
             LinAlgError::NotInvertible.to_string(),
             "not invertible: matrix is singular, so no inverse exists"
+        );
+    }
+
+    #[test]
+    fn display_spells_out_not_triangular() {
+        assert_eq!(
+            LinAlgError::NotTriangular.to_string(),
+            "not triangular: matrix is neither upper nor lower triangular"
         );
     }
 

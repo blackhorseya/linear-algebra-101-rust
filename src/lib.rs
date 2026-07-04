@@ -30,7 +30,10 @@ pub use basis::{extend_to_basis, is_basis, is_standard_basis, reduce_to_basis};
 pub use composition::TransformationReport;
 pub use coordinates::{coordinates, from_coordinates};
 pub use diagonal::DiagonalMatrix;
-pub use eigen::{characteristic_matrix, eigenspace_basis, has_real_eigenvalues_2x2, is_eigenpair};
+pub use eigen::{
+    algebraic_multiplicity, characteristic_matrix, eigenspace_basis, has_real_eigenvalues_2x2,
+    is_eigenpair, triangular_eigenvalues,
+};
 pub use error::LinAlgError;
 pub use independence::{
     is_linearly_dependent, is_linearly_independent, redundancy_count, removable_columns,

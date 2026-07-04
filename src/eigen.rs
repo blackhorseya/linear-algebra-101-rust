@@ -1,4 +1,4 @@
-//! 特徵值與特徵向量(Eigenvalues & Eigenvectors)—— 單元 8-1(講義 5.1)。
+//! 特徵值與特徵向量(Eigenvalues & Eigenvectors)—— 單元 8-1 / 8-2(講義 5.1–5.2 前段)。
 //!
 //! 這是課程進入「進階主題」的第一章。前面所有轉換都把整個空間搬來搬去;這裡問一個
 //! 更尖銳的問題:對一個運算子 T(方陣 A),**哪些非零向量 v 只被「伸縮」、方向不變**?
@@ -31,6 +31,26 @@
 //! - **練習 2**(運算子版特徵檢查)**不進 API**:運算子的特徵向量 = 其標準矩陣的特徵向量,
 //!   這是定理不是新計算 —— 經 [`standard_matrix`](crate::standard_matrix) 橋接 closure 與
 //!   矩陣,寫成 `mod laws` 的 `operator_eigen_agrees_with_standard_matrix`。
+//!
+//! ## 單元 8-2:特徵多項式 1/2(講義 5.2 前段)—— 6 題 → 3 新計算 + 3 題吃老本
+//!
+//! 8-1 給了「驗證」的工具(給你 λ,我驗它是不是特徵值);8-2 回答「怎麼**找**」:
+//! `(A − tI)·v = 0` 有非零解 ⟺ `A − tI` 奇異 ⟺ **`det(A − tI) = 0`(特徵方程)**。
+//! `det(A − tI)` 是 t 的 n 次多項式(**特徵多項式**),特徵值就是它的根。
+//!
+//! - **練習 1**(`A − tI` 構造)= 8-1 的 [`characteristic_matrix`],**零新碼** ——
+//!   補筆記原例的具體測試(stub 階段就綠,reuse 的見證)。
+//! - **練習 2**(2×2 特徵多項式係數 `t² − tr(A)·t + det(A)`)→ 新積木 [`Matrix::trace`]。
+//!   「係數包裝函式」只是重述公式、不進 API;law
+//!   `char_poly_2x2_expands_via_trace_and_det` 直接隨機驗**展開本身**(比回傳係數更強)。
+//! - **練習 3** [`triangular_eigenvalues`]:三角矩陣特徵值 = 主對角線直讀(Property 3)——
+//!   真正的新計算,配新錯誤 [`LinAlgError::NotTriangular`]。
+//! - **練習 4**(相似矩陣共享特徵多項式)是定理不是計算 → law
+//!   `similar_matrices_share_characteristic_polynomial`(`B = P⁻¹AP`,隨機 t 對帳兩邊 det)。
+//! - **練習 5** [`algebraic_multiplicity`]:代數重數計數器 —— 練習 3 的輸出是它的輸入,
+//!   下一單元的對角化判準(代數 vs 幾何重數)是它的下游。
+//! - **練習 6**(90° 旋轉無實根)= 8-1 的 [`has_real_eigenvalues_2x2`],**零新碼** →
+//!   law 對帳兩條判別式:`tr² − 4·det`(係數路)≡ `(a−d)² + 4bc`(8-1 路)。
 //!
 //! 與 `transformation` / `subspace` 同款佈局:本模組碰不到 private 的 `data`,一律走
 //! public API。
@@ -129,6 +149,97 @@ pub fn has_real_eigenvalues_2x2(a: &Matrix) -> bool {
     let c = row1[0];
     let d = row1[1];
     (a - d).powi(2) + 4.0 * b * c >= 0.0
+}
+
+// ───────────────────── 單元 8-2:特徵多項式 1/2(講義 5.2 前段) ─────────────────────
+
+impl Matrix {
+    /// **8-2 練習 2 的新積木 —— 跡(trace)**:主對角線元素之和 `tr(A) = Σ aᵢᵢ`。
+    ///
+    /// 在特徵多項式裡它是一次項係數:對 2×2,`det(A − tI) = t² − tr(A)·t + det(A)`
+    /// (law `char_poly_2x2_expands_via_trace_and_det` 隨機驗證這個展開)。與 det 同為
+    /// **相似不變量**(`P⁻¹AP` 不改變 trace)—— 5.2 後段「trace = Σ 特徵值」會回頭用它。
+    ///
+    /// 非方陣的「主對角線」走不到底、談不上跡 → [`LinAlgError::NotSquare`]
+    /// (沿 [`characteristic_matrix`] / [`Matrix::power`](crate::Matrix::power) 的先例)。
+    ///
+    /// 實作提示:守住 [`Matrix::is_square`] 後,`(0..n)` 逐 i 取 [`Matrix::row`]`(i)[i]`
+    /// 加總(guard 後 `row` 不會失敗,`expect` 即可;本模組碰不到 private `data`)。
+    pub fn trace(&self) -> Result<f64, LinAlgError> {
+        if !self.is_square() {
+            return Err(LinAlgError::NotSquare {
+                rows: self.rows(),
+                cols: self.cols(),
+            });
+        }
+        let n = self.rows();
+        let mut sum = 0.0;
+        for i in 0..n {
+            let row = self
+                .row(i)
+                .expect("trace: is_square guard 後 row 不會失敗;若失敗,是程式 bug");
+            sum += row[i];
+        }
+        Ok(sum)
+    }
+}
+
+/// **練習 3 —— 三角矩陣特徵值直讀**:上或下三角矩陣的特徵值就是**主對角線元素**
+/// (Property 3)。回傳照對角線順序、**保留重複** —— 重複次數正是該特徵值的代數重數
+/// (交給 [`algebraic_multiplicity`] 數)。
+///
+/// 為什麼成立:A 三角 ⟹ `A − tI` 也三角 ⟹ `det(A − tI) = Π (aᵢᵢ − t)`
+/// (Theorem 3.2,同 [`Matrix::determinant_triangular`](crate::Matrix::determinant_triangular)
+/// 的對角線乘積),根一字排開就是各 `aᵢᵢ`。
+///
+/// 兩層失敗各自精確(沿 [`Matrix::inverse`](crate::Matrix::inverse) 的
+/// NotSquare / NotInvertible 先例):
+/// - 非方陣 → [`LinAlgError::NotSquare`](談不上特徵值);
+/// - 方陣但非三角 → [`LinAlgError::NotTriangular`](直讀失效 —— 一般矩陣要走特徵方程)。
+///
+/// 實作提示:守住 [`Matrix::is_square`] 後,用 5-5 的
+/// [`is_upper_triangular`](crate::Matrix::is_upper_triangular) /
+/// [`is_lower_triangular`](crate::Matrix::is_lower_triangular)`(epsilon)`(兩者其一即過),
+/// 再 `(0..n)` 收集 `row(i)[i]`。
+pub fn triangular_eigenvalues(epsilon: f64, a: &Matrix) -> Result<Vec<f64>, LinAlgError> {
+    if !a.is_square() {
+        return Err(LinAlgError::NotSquare {
+            rows: a.rows(),
+            cols: a.cols(),
+        });
+    }
+    if !a.is_upper_triangular(epsilon) && !a.is_lower_triangular(epsilon) {
+        return Err(LinAlgError::NotTriangular);
+    }
+    let n = a.rows();
+    let mut eigenvalues = Vec::with_capacity(n);
+    for i in 0..n {
+        let row = a
+            .row(i)
+            .expect("triangular_eigenvalues: is_square guard 後 row 不會失敗;若失敗,是程式 bug");
+        eigenvalues.push(row[i]);
+    }
+    Ok(eigenvalues)
+}
+
+/// **練習 5 —— 代數重數(algebraic multiplicity)**:λ 在特徵值列表(特徵多項式的根,
+/// 含重複)中出現的次數。
+///
+/// 列表哪來?本章唯一的來源是 [`triangular_eigenvalues`](重根天然入列,如 `[−1, 3, 3]`
+/// 裡 3 的代數重數 = 2);5.2 後段的一般求根會接上同一個計數器。與**幾何重數**
+/// (`dim Eλ` = [`eigenspace_basis`] 的向量個數)相對 —— 下一單元的對角化判準就是比較
+/// 這兩個數(見測試 `algebraic_multiplicity_can_exceed_geometric`:剪切的 3 是
+/// 代數 2、幾何 1)。
+///
+/// 浮點的「同一個根」用量值 ≤ `epsilon` 判(數值殘差不該拆散重根);找不到 → 0
+/// (「λ 不是特徵值」是合法答案,不是錯誤)。
+///
+/// 實作提示:`iter().filter(…).count()` 一條函數式管線就夠。
+pub fn algebraic_multiplicity(epsilon: f64, eigenvalues: &[f64], lambda: f64) -> usize {
+    eigenvalues
+        .iter()
+        .filter(|&&ev| (ev - lambda).abs() <= epsilon)
+        .count()
 }
 
 #[cfg(test)]
@@ -269,6 +380,149 @@ mod tests {
     fn has_real_eigenvalues_2x2_rejects_non_2x2() {
         assert!(!has_real_eigenvalues_2x2(&Matrix::identity(3)));
     }
+
+    // ═══════════════ 單元 8-2:特徵多項式 1/2 ═══════════════
+
+    // ---- 練習 1:characteristic_matrix 重用(零新碼,stub 階段就綠)----
+
+    /// 8-2 筆記原例:A − 5I。t = 5 不是隨便選的 —— det(A − 5I) = (−9)(1) − (−3)(3) = 0,
+    /// 5 正是 A 的特徵值(見 `char_poly_coefficients_factor_textbook_example`:
+    /// (t+3)(t−5) 的根之一)。
+    #[test]
+    fn characteristic_matrix_matches_unit_8_2_example() {
+        let a = Matrix::from_rows(vec![vec![-4.0, -3.0], vec![3.0, 6.0]]);
+        let m = characteristic_matrix(&a, 5.0).unwrap();
+        assert!(m.equals(&Matrix::from_rows(vec![vec![-9.0, -3.0], vec![3.0, 1.0]])));
+    }
+
+    // ---- 練習 2:trace(+ 特徵多項式係數的具體對帳)----
+
+    /// 8-2 筆記原例:tr([[−4,−3],[3,6]]) = −4 + 6 = 2。
+    #[test]
+    fn trace_sums_the_main_diagonal() {
+        let a = Matrix::from_rows(vec![vec![-4.0, -3.0], vec![3.0, 6.0]]);
+        assert_eq!(a.trace().unwrap(), 2.0);
+    }
+
+    /// 非方陣的主對角線走不到底 → NotSquare(沿 characteristic_matrix / power 先例)。
+    #[test]
+    fn trace_rejects_non_square() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            a.trace().unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    /// 筆記原例整條串起來:A = [[−4,−3],[3,6]] 的特徵多項式
+    /// t² − tr·t + det = t² − 2t − 15 = (t+3)(t−5) —— 兩根 −3、5 都真的是特徵值
+    /// (Eλ 非平凡),非根就不是。「解特徵方程」與「零空間非平凡」在具體數字上會合。
+    #[test]
+    fn char_poly_coefficients_factor_textbook_example() {
+        let a = Matrix::from_rows(vec![vec![-4.0, -3.0], vec![3.0, 6.0]]);
+        assert_eq!(a.trace().unwrap(), 2.0);
+        assert_eq!(a.determinant_recursive().unwrap(), -15.0);
+        assert!(
+            !eigenspace_basis(EPS, &a, 5.0).unwrap().is_empty(),
+            "根 5 是特徵值"
+        );
+        assert!(
+            !eigenspace_basis(EPS, &a, -3.0).unwrap().is_empty(),
+            "根 −3 是特徵值"
+        );
+        assert!(
+            eigenspace_basis(EPS, &a, 1.0).unwrap().is_empty(),
+            "1 不是根,E₁ = {{0}}"
+        );
+    }
+
+    // ---- 練習 3:triangular_eigenvalues ----
+
+    /// 8-2 筆記原例:上三角 → 特徵值 = 對角線直讀,重根照留
+    /// ([−1, 3, 3]:3 的代數重數 2)。
+    #[test]
+    fn triangular_eigenvalues_read_the_diagonal_with_repeats() {
+        let a = Matrix::from_rows(vec![
+            vec![-1.0, 0.0, 0.0],
+            vec![0.0, 3.0, 1.0],
+            vec![0.0, 0.0, 3.0],
+        ]);
+        assert_eq!(
+            triangular_eigenvalues(EPS, &a).unwrap(),
+            vec![-1.0, 3.0, 3.0]
+        );
+    }
+
+    /// 下三角走 is_lower_triangular 那條路,同樣直讀。
+    #[test]
+    fn triangular_eigenvalues_accept_lower_triangular() {
+        let a = Matrix::from_rows(vec![vec![2.0, 0.0], vec![7.0, -5.0]]);
+        assert_eq!(triangular_eigenvalues(EPS, &a).unwrap(), vec![2.0, -5.0]);
+    }
+
+    /// 8-2 筆記原例(反例):對稱但非三角 → 直讀不適用,NotTriangular
+    /// (它的特徵值是 3, 3, −1,對角線卻是 3, 1, 1 —— 亂讀就錯)。
+    #[test]
+    fn triangular_eigenvalues_reject_non_triangular() {
+        let b = Matrix::from_rows(vec![
+            vec![3.0, 0.0, 0.0],
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 2.0, 1.0],
+        ]);
+        assert_eq!(
+            triangular_eigenvalues(EPS, &b).unwrap_err(),
+            LinAlgError::NotTriangular
+        );
+    }
+
+    /// 兩層失敗各自精確:非方陣談不上特徵值 → NotSquare(不是 NotTriangular)。
+    #[test]
+    fn triangular_eigenvalues_reject_non_square() {
+        let a = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        assert_eq!(
+            triangular_eigenvalues(EPS, &a).unwrap_err(),
+            LinAlgError::NotSquare { rows: 2, cols: 3 }
+        );
+    }
+
+    // ---- 練習 5:algebraic_multiplicity ----
+
+    /// 8-2 筆記原例:[−1, 3, 3] 中 3 出現 2 次 —— λ = 3 的代數重數 2。
+    #[test]
+    fn algebraic_multiplicity_counts_repeated_roots() {
+        let eigs = [-1.0, 3.0, 3.0];
+        assert_eq!(algebraic_multiplicity(EPS, &eigs, 3.0), 2);
+        assert_eq!(algebraic_multiplicity(EPS, &eigs, -1.0), 1);
+    }
+
+    /// 不在列表 → 0(「λ 不是特徵值」是合法答案,不是錯誤)。
+    #[test]
+    fn algebraic_multiplicity_is_zero_for_absent_value() {
+        assert_eq!(algebraic_multiplicity(EPS, &[-1.0, 3.0, 3.0], 7.0), 0);
+    }
+
+    /// 浮點容差:量值 ≤ epsilon 算同一個根(數值求根的殘差不該拆散重根);
+    /// 精確模式(epsilon = 0)下殘差就是不同(沿 is_upper_triangular 的精確模式測試)。
+    #[test]
+    fn algebraic_multiplicity_merges_roots_within_epsilon() {
+        let eigs = [3.0 + 5e-10, 3.0 - 5e-10];
+        assert_eq!(algebraic_multiplicity(EPS, &eigs, 3.0), 2);
+        assert_eq!(algebraic_multiplicity(0.0, &eigs, 3.0), 0);
+    }
+
+    /// 預告下一單元的張力:剪切 [[3,1],[0,3]] 的 λ = 3 **代數重數 2**(對角線兩個 3)、
+    /// **幾何重數卻只有 1**(E₃ 一維)—— 兩個重數可以不相等,這正是「可否對角化」的關鍵。
+    #[test]
+    fn algebraic_multiplicity_can_exceed_geometric() {
+        let shear = Matrix::from_rows(vec![vec![3.0, 1.0], vec![0.0, 3.0]]);
+        let eigs = triangular_eigenvalues(EPS, &shear).unwrap();
+        assert_eq!(algebraic_multiplicity(EPS, &eigs, 3.0), 2, "代數重數");
+        assert_eq!(
+            eigenspace_basis(EPS, &shear, 3.0).unwrap().len(),
+            1,
+            "幾何重數"
+        );
+    }
 }
 
 /// 教材定理的隨機驗證(「for all」形式)。整數策略配精確 / 1e-9 容差(整數加減乘在 f64 下
@@ -322,6 +576,30 @@ mod laws {
         (-9i64..=9, -9i64..=9, -9i64..=9).prop_map(|(a, b, d)| {
             Matrix::from_rows(vec![vec![a as f64, b as f64], vec![b as f64, d as f64]])
         })
+    }
+
+    /// 上三角整數方陣(i > j 全填 0)—— 8-2 練習 3「對角線直讀」的原生棲地。
+    fn int_upper_triangular() -> impl Strategy<Value = Matrix> {
+        (1usize..=4).prop_flat_map(|n| {
+            prop::collection::vec(prop::collection::vec(-5i64..=5, n), n).prop_map(|grid| {
+                Matrix::from_rows(
+                    grid.into_iter()
+                        .enumerate()
+                        .map(|(i, row)| {
+                            row.into_iter()
+                                .enumerate()
+                                .map(|(j, v)| if i > j { 0.0 } else { v as f64 })
+                                .collect()
+                        })
+                        .collect(),
+                )
+            })
+        })
+    }
+
+    /// 同階整數方陣對 (A, P) —— 相似性 law 要兩枚同階(沿 operator.rs 的 paired 策略)。
+    fn int_square_pair() -> impl Strategy<Value = (Matrix, Matrix)> {
+        (1usize..=3).prop_flat_map(|n| (int_square_matrix(n), int_square_matrix(n)))
     }
 
     proptest! {
@@ -396,6 +674,94 @@ mod laws {
         #[test]
         fn symmetric_2x2_always_has_real_eigenvalues(a in symmetric_2x2()) {
             prop_assert!(has_real_eigenvalues_2x2(&a));
+        }
+
+        // ═══════════════ 單元 8-2:特徵多項式 1/2 ═══════════════
+
+        // 8-2 練習 2:2×2 特徵多項式展開 det(A − tI) = t² − tr(A)·t + det(A)。
+        // 「係數函式」只會重述這條公式 → 不進 API,直接驗展開本身。
+        // determinant_recursive(餘因子展開,純多項式無除法)對整數精確 → 兩邊可精確比。
+        #[test]
+        fn char_poly_2x2_expands_via_trace_and_det(a in int_square_matrix(2), t in -5i64..=5) {
+            let t = t as f64;
+            let lhs = characteristic_matrix(&a, t)
+                .unwrap()
+                .determinant_recursive()
+                .unwrap();
+            let rhs = t * t - a.trace().unwrap() * t + a.determinant_recursive().unwrap();
+            prop_assert_eq!(lhs, rhs, "det(A−tI) 應精確展開為 t² − tr·t + det");
+        }
+
+        // 8-2 練習 3:三角矩陣特徵值 = 主對角線(照序、含重複);
+        // 下三角 = 上三角的轉置,同一條律(轉置不動對角線)。
+        #[test]
+        fn triangular_eigenvalues_read_off_the_diagonal(a in int_upper_triangular()) {
+            let n = a.rows();
+            let diag: Vec<f64> = (0..n).map(|i| a.row(i).unwrap()[i]).collect();
+            prop_assert_eq!(triangular_eigenvalues(EPS, &a).unwrap(), diag.clone(), "上三角");
+            prop_assert_eq!(triangular_eigenvalues(EPS, &a.transpose()).unwrap(), diag, "下三角");
+        }
+
+        // 8-2 練習 3(接回 8-1):直讀出的每個 λ 真的是特徵值 —— Eλ 非平凡,基底全是特徵對
+        // (A 三角 ⟹ A − λI 三角且對角線見 0 ⟹ det = 0 ⟹ 零空間非平凡)。
+        #[test]
+        fn triangular_eigenvalues_have_nontrivial_eigenspace(a in int_upper_triangular()) {
+            const SOLVE_EPS: f64 = 1e-7; // RREF 除法殘差
+            for lambda in triangular_eigenvalues(EPS, &a).unwrap() {
+                let basis = eigenspace_basis(SOLVE_EPS, &a, lambda).unwrap();
+                prop_assert!(!basis.is_empty(), "對角線元素 {} 必是特徵值", lambda);
+                for v in &basis {
+                    prop_assert!(is_eigenpair(SOLVE_EPS, &a, v, lambda));
+                }
+            }
+        }
+
+        // 8-2 練習 4:相似矩陣共享特徵多項式 —— B = P⁻¹AP 時 det(A − tI) = det(B − tI)
+        // 對所有 t(講義證明:det(P⁻¹(A − tI)P) = det(P⁻¹)·det(A − tI)·det(P))。
+        // P⁻¹ 帶除法 → SOLVE/COMPARE 兩檔容差,沿 operator.rs 的相似 laws 慣例。
+        #[test]
+        fn similar_matrices_share_characteristic_polynomial(
+            (a, p) in int_square_pair(), t in -5i64..=5,
+        ) {
+            const SOLVE_EPS: f64 = 1e-9;
+            const COMPARE_EPS: f64 = 1e-6;
+            prop_assume!(p.is_invertible(SOLVE_EPS)); // 奇異 P 不見證相似,略過
+
+            let t = t as f64;
+            let p_inv = p.inverse(SOLVE_EPS).expect("可逆已由 prop_assume 保證");
+            let b = p_inv.multiply(&a).unwrap().multiply(&p).unwrap();
+
+            let lhs = characteristic_matrix(&a, t).unwrap().determinant(SOLVE_EPS).unwrap();
+            let rhs = characteristic_matrix(&b, t).unwrap().determinant(SOLVE_EPS).unwrap();
+            prop_assert!(
+                (lhs - rhs).abs() <= COMPARE_EPS,
+                "det(A−tI) = {},det(P⁻¹AP − tI) = {}",
+                lhs,
+                rhs
+            );
+        }
+
+        // 8-2 練習 5:重數會計 —— 三角矩陣 n 個對角元全數入列,
+        // 相異特徵值的代數重數總和 = n(特徵多項式 n 次,根含重數恰 n 個)。
+        #[test]
+        fn algebraic_multiplicities_sum_to_dimension(a in int_upper_triangular()) {
+            let eigs = triangular_eigenvalues(EPS, &a).unwrap();
+            let mut distinct = eigs.clone();
+            distinct.sort_by(f64::total_cmp);
+            distinct.dedup(); // 整數精確,dedup 不受浮點殘差干擾
+            let total: usize = distinct
+                .iter()
+                .map(|&lambda| algebraic_multiplicity(EPS, &eigs, lambda))
+                .sum();
+            prop_assert_eq!(total, a.rows());
+        }
+
+        // 8-2 練習 6:判別式殊途同歸 —— 係數路 Δ = tr² − 4·det 與 8-1 的
+        // (a−d)² + 4bc 是代數上同一個數,判定必一致(整數精確,連 Δ = 0 邊界都準)。
+        #[test]
+        fn discriminant_via_coefficients_agrees_with_has_real(a in int_square_matrix(2)) {
+            let delta = a.trace().unwrap().powi(2) - 4.0 * a.determinant_recursive().unwrap();
+            prop_assert_eq!(delta >= 0.0, has_real_eigenvalues_2x2(&a));
         }
     }
 }
