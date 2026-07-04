@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { RangeCanvas } from '../components/RangeCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/range')({
@@ -45,8 +48,18 @@ function RangeDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:數字輸入框、preset 按鈕、Canvas 拖曳共用這份 state。
-  const [matrix, setMatrix] = useState<Matrix2x2>(PRESETS[0].m)
+  // 共享優先:URL 有共享矩陣就採其左上 2×2,沒有才用本頁教學預設。
+  const { initial, publish } = useSharedMatrix()
+  const [matrix, setMatrix] = useState<Matrix2x2>(
+    () => toMatrix2x2(initial) ?? PRESETS[0].m,
+  )
   const [w, setW] = useState<Vec2>({ x: 3, y: 1 })
+
+  // 矩陣所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享(w 不共享)。
+  const applyMatrix = (next: Matrix2x2) => {
+    setMatrix(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -75,6 +88,7 @@ function RangeDemo() {
           全部由 Rust core 的 <code className="text-slate-300">range</code>{' '}
           模組當場計算。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* Preset:三種秩的代表 */}
@@ -84,7 +98,7 @@ function RangeDemo() {
             <button
               key={p.name}
               type="button"
-              onClick={() => setMatrix(p.m)}
+              onClick={() => applyMatrix(p.m)}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 transition hover:border-violet-500/60 hover:text-violet-200"
             >
               {p.name}
@@ -98,22 +112,22 @@ function RangeDemo() {
             <NumberField
               label="a(a₁ 的 x)"
               value={a}
-              onChange={(v) => setMatrix({ ...matrix, a: v })}
+              onChange={(v) => applyMatrix({ ...matrix, a: v })}
             />
             <NumberField
               label="b(a₂ 的 x)"
               value={b}
-              onChange={(v) => setMatrix({ ...matrix, b: v })}
+              onChange={(v) => applyMatrix({ ...matrix, b: v })}
             />
             <NumberField
               label="c(a₁ 的 y)"
               value={c}
-              onChange={(v) => setMatrix({ ...matrix, c: v })}
+              onChange={(v) => applyMatrix({ ...matrix, c: v })}
             />
             <NumberField
               label="d(a₂ 的 y)"
               value={d}
-              onChange={(v) => setMatrix({ ...matrix, d: v })}
+              onChange={(v) => applyMatrix({ ...matrix, d: v })}
             />
           </div>
         </div>
@@ -124,7 +138,7 @@ function RangeDemo() {
           linalg={linalg}
           m={matrix}
           w={w}
-          onChangeM={setMatrix}
+          onChangeM={applyMatrix}
           onChangeW={setW}
         />
         <p className="text-xs text-slate-500">

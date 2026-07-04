@@ -9,6 +9,7 @@ import { resizeGrid, type Size } from '../lib/grid'
 import { PlaybackControls } from '../components/Playback'
 import { Status } from '../components/ui'
 import { fmt } from '../lib/format'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 
 export const Route = createFileRoute('/invertibility')({
   component: InvertibilityDemo,
@@ -65,8 +66,10 @@ function InvertibilityDemo() {
     error,
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
-  const [n, setN] = useState<Size>(2)
-  const [grid, setGrid] = useState<number[][]>(DEFAULT_GRIDS[2])
+  // 共享優先:本頁擁有完整 n×n,尺寸與內容都從共享矩陣還原;沒有才用預設。
+  const { initial, publish } = useSharedMatrix()
+  const [n, setN] = useState<Size>(() => (initial?.length as Size) ?? 2)
+  const [grid, setGrid] = useState<number[][]>(() => initial ?? DEFAULT_GRIDS[2])
   const [currentStep, setCurrentStep] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
 
@@ -129,21 +132,28 @@ function InvertibilityDemo() {
     if (!isPlaying && safeStep >= stepCount - 1) setCurrentStep(0) // 在結尾按 ▶:從頭重播
     setIsPlaying((p) => !p)
   }
+  // 矩陣所有寫路徑的唯一出口:本地更新 + 整顆寫回共享。就地算 next 再 apply,
+  // 不走 functional updater —— publish 是副作用,放進 updater 會被
+  // StrictMode 的 double-invoke 寫兩次。
+  const applyGrid = (next: number[][]) => {
+    setGrid(next)
+    publish(next)
+  }
   const setCell = (r: number, c: number, value: number) =>
-    setGrid((g) =>
-      g.map((row, ri) =>
+    applyGrid(
+      grid.map((row, ri) =>
         ri === r ? row.map((v, ci) => (ci === c ? value : v)) : row,
       ),
     )
   const changeSize = (next: Size) => {
     setN(next)
-    setGrid((g) => resizeGrid(g, next))
+    applyGrid(resizeGrid(grid, next))
   }
-  const reset = () => setGrid(DEFAULT_GRIDS[n].map((row) => [...row]))
+  const reset = () => applyGrid(DEFAULT_GRIDS[n].map((row) => [...row]))
   // 小整數(−5…5)隨機重填:消去後的 P 元素仍是好讀的分數。
   const randomize = () =>
-    setGrid((g) =>
-      g.map((row) => row.map(() => Math.floor(Math.random() * 11) - 5)),
+    applyGrid(
+      grid.map((row) => row.map(() => Math.floor(Math.random() * 11) - 5)),
     )
 
   const eroCount = stepCount - 1 // 扣掉 initial 步,= 實際施作的基本矩陣個數

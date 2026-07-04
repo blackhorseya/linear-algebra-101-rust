@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { loadLinalg } from '../lib/linalg'
 import { CompositionCanvas } from '../components/CompositionCanvas'
 import { NumberField, Row, Status } from '../components/ui'
+import { SharedMatrixNote } from '../components/SharedMatrixNote'
 import { fmt } from '../lib/format'
+import { patchTopLeft, toMatrix2x2 } from '../lib/shared-matrix'
+import { useSharedMatrix } from '../lib/use-shared-matrix'
 import { type Matrix2x2, type Vec2 } from '../lib/canvas'
 
 export const Route = createFileRoute('/composition')({
@@ -71,13 +74,23 @@ function CompositionDemo() {
   } = useQuery({ queryKey: ['linalg'], queryFn: loadLinalg })
 
   // 單一真相:輸入框、preset、Canvas 拖曳共用這份 state。
+  // 共享優先:內層 T 接共享矩陣的左上 2×2(第一顆;外層 U 是本頁專屬,不共享)。
+  const { initial, publish } = useSharedMatrix()
   const [mode, setMode] = useState<Mode>('compose')
-  const [t, setT] = useState<Matrix2x2>(COMPOSE_PRESETS[0].t)
+  const [t, setT] = useState<Matrix2x2>(
+    () => toMatrix2x2(initial) ?? COMPOSE_PRESETS[0].t,
+  )
   // u 在 Preset 型別上是 optional(逆轉換 preset 不帶),fallback 給 identity。
   const [u, setU] = useState<Matrix2x2>(
     COMPOSE_PRESETS[0].u ?? { a: 1, b: 0, c: 0, d: 1 },
   )
   const [x, setX] = useState<Vec2>({ x: 3, y: 1 })
+
+  // T 所有寫路徑的唯一出口:本地更新 + patch 左上寫回共享。
+  const applyT = (next: Matrix2x2) => {
+    setT(next)
+    publish(patchTopLeft(initial, next))
+  }
 
   if (isLoading) return <Status>載入 WASM 模組中…</Status>
   if (error || !linalg) return <Status>WASM 載入失敗:{String(error)}</Status>
@@ -117,6 +130,7 @@ function CompositionDemo() {
           合成、求逆、判定全由 Rust core 的{' '}
           <code className="text-slate-300">composition</code> 模組當場計算。
         </p>
+        <SharedMatrixNote n={initial?.length} />
       </div>
 
       {/* 模式切換 + preset */}
@@ -148,7 +162,7 @@ function CompositionDemo() {
               key={p.name}
               type="button"
               onClick={() => {
-                setT(p.t)
+                applyT(p.t)
                 if (p.u) setU(p.u)
               }}
               title={p.desc}
@@ -164,10 +178,10 @@ function CompositionDemo() {
           <div className="flex items-end gap-3">
             <span className="pb-1 font-mono text-slate-500">A(T)=</span>
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="a" value={t.a} onChange={(v) => setT({ ...t, a: v })} />
-              <NumberField label="b" value={t.b} onChange={(v) => setT({ ...t, b: v })} />
-              <NumberField label="c" value={t.c} onChange={(v) => setT({ ...t, c: v })} />
-              <NumberField label="d" value={t.d} onChange={(v) => setT({ ...t, d: v })} />
+              <NumberField label="a" value={t.a} onChange={(v) => applyT({ ...t, a: v })} />
+              <NumberField label="b" value={t.b} onChange={(v) => applyT({ ...t, b: v })} />
+              <NumberField label="c" value={t.c} onChange={(v) => applyT({ ...t, c: v })} />
+              <NumberField label="d" value={t.d} onChange={(v) => applyT({ ...t, d: v })} />
             </div>
           </div>
           {mode === 'compose' ? (
